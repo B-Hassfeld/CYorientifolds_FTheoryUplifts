@@ -243,6 +243,9 @@ class F_Theory_Uplift():
             if self.__triangulated:
                 self.__triangulate_singular_uplift()
                 self.__triangulate_smooth_uplift()
+        else:
+            self.__is_partition=False
+            self.__is_nef_partition=False
 
     def __set_singular_toric_fan(self):
         """Constructs the generic singular F-theory uplift fan."""
