@@ -12,7 +12,7 @@ from cytools.vector_config import VectorConfiguration
 from scipy.optimize import nnls
 from scipy.optimize import milp, LinearConstraint
 
-def compute_nef_partition(divisors,rays):
+def compute_partition(divisors,rays):
 
     null = np.zeros([rays.shape[0],rays.shape[1]],dtype=int)
     linear1 = np.tensordot(np.identity(2,dtype=int),rays,axes=0)
