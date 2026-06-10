@@ -529,53 +529,36 @@ class F_Theory_Uplift():
 
     def divisor_intersection_M(self, as_LLL=True):
         """Computes the curve homology intersections in the N basis."""
-        # if not self.triangulated():
-        #     print("Can't compute intersections without a triangulation")
-        #     return []
             
         fan = self.M_conv_toric_fan()
         intersection_dict = self.intersection_numbers_M_conv()
         three_simplices = UF.get_lower_dimensional_cones(fan.cones(), fan.dim - 3)
         basis = self.basis_homology_M()
         
-        # 1. Convert to sets for instant O(1) intersection checks
         LBW_set = set(np.where(self.line_bundle_base_M() == 1)[0] + 1)
         LBB_set = set(np.where(self.line_bundle_weierstrass_M() == 1)[0] + 1)
         basis_set = set(basis)
         
         curves_homology_in_basis = np.zeros((len(three_simplices), len(basis_set)), dtype=int)
         
-        # Pre-map basis elements to their matrix indices to avoid .index() lookups
         basis_idx_map = {b: idx for idx, b in enumerate(basis)}
 
-        # 2. Iterate through simplices and use the Toric Link as a spatial filter
         for s_idx, s in enumerate(three_simplices):
-            # s_list = list(s)
-            
-            # --- TOPOLOGICAL FILTERING ---
-            # Generate the cone object for 's', then extract the rays in its link.
-            # (Adjust the syntax here if your library constructs cones differently)
-            # cone_s = fan.cone(s) 
             link_rays = {item for sub_tuple in fan.star(s) for item in sub_tuple}
             
-            # The only valid x, y, and i are those that exist in the link of s.
             valid_x = LBW_set.intersection(link_rays)
             valid_y = LBB_set.intersection(link_rays)
             valid_i = basis_set.intersection(link_rays)
             
-            # If the link doesn't contain at least one of each, the intersection is definitively 0.
             if not (len(valid_x)>0 and  len(valid_y)>0 and len(valid_i)>0):
                 continue
                 
-            # 3. Calculate intersections only for the topologically valid local neighborhood
             for i in valid_i:
                 i_idx = basis_idx_map.get(i)
                 total_intersection = 0
                 
                 for x in valid_x:
                     for y in valid_y:
-                        # Construct the key. Since it's guaranteed to be in the star, 
-                        # this dict lookup is now guaranteed to be meaningful.
                         key = tuple(sorted(s + (x, y, i)))
                         total_intersection += intersection_dict.get(key, 0)
                 
@@ -596,47 +579,30 @@ class F_Theory_Uplift():
         three_simplices = UF.get_lower_dimensional_cones(fan.cones(), fan.dim - 3)
         basis = self.basis_homology_N()
         
-        # 1. Convert to sets for instant O(1) intersection checks
         LBW_set = set(np.where(self.line_bundle_base_N() == 1)[0] + 1)
         LBB_set = set(np.where(self.line_bundle_weierstrass_N() == 1)[0] + 1)
         basis_set = set(basis)
         
 
-        # num_simplices = len(three_simplices)
-        # num_basis = len(basis)
         curves_homology_in_basis = np.zeros((len(three_simplices), len(basis_set)), dtype=int)
-        
-        # Pre-map basis elements to their matrix indices to avoid .index() lookups
         basis_idx_map = {b: idx for idx, b in enumerate(basis)}
 
-        # 2. Iterate through simplices and use the Toric Link as a spatial filter
         for s_idx, s in enumerate(three_simplices):
-            # s_list = list(s)
-            
-            # --- TOPOLOGICAL FILTERING ---
-            # Generate the cone object for 's', then extract the rays in its link.
-            # (Adjust the syntax here if your library constructs cones differently)
-            # cone_s = fan.cone(s) 
             link_rays = {item for sub_tuple in fan.star(s) for item in sub_tuple}
             
-            # The only valid x, y, and i are those that exist in the link of s.
             valid_x = LBW_set.intersection(link_rays)
             valid_y = LBB_set.intersection(link_rays)
             valid_i = basis_set.intersection(link_rays)
             
-            # If the link doesn't contain at least one of each, the intersection is definitively 0.
             if not (len(valid_x)>0 and  len(valid_y)>0 and len(valid_i)>0):
                 continue
                 
-            # 3. Calculate intersections only for the topologically valid local neighborhood
             for i in valid_i:
                 i_idx = basis_idx_map.get(i)
                 total_intersection = 0
                 
                 for x in valid_x:
                     for y in valid_y:
-                        # Construct the key. Since it's guaranteed to be in the star, 
-                        # this dict lookup is now guaranteed to be meaningful.
                         key = tuple(sorted(s + (x, y, i)))
                         total_intersection += intersection_dict.get(key, 0)
                 
@@ -778,49 +744,6 @@ class F_Theory_Uplift():
     def normal_fan(self):
         """Returns the normal fan of the underlying base structure."""
         return self.orientifold().normal_fan()
-
-    def divisor_intersection_N_optimized(self, as_LLL=True, check=True):
-        """Computes the curve homology intersections in the N basis."""
-        if not self.__triangulated:
-            self.__triangulate_singular_uplift()
-            self.__triangulate_smooth_uplift()
-            
-        # 1. Fetch properties ONCE to avoid repeated method calls
-        intersection_dict = self.intersection_numbers_smooth_uplift()
-        three_simplices = UF.get_lower_dimensional_cones(self.smooth_uplift_toric_fan().cones(), self.dim_base() - 1)
-        basis = UF.basis_H2_toric_fan(self.smooth_uplift_toric_fan())
-        
-        # Convert to native Python lists for faster inner-loop iteration
-        LBW_ones = (np.where(self.line_bundle_base_N() == 1)[0] + 1).tolist()
-        LBB_ones = (np.where(self.line_bundle_weierstrass_N() == 1)[0] + 1).tolist()
-        
-        print("Got basis")
-
-        # 2. Precompute the Cartesian product of x and y
-        xy_pairs = [[x, y] for x in LBW_ones for y in LBB_ones]
-
-        # 3. Preallocate the result array instead of dynamically building nested lists
-        num_simplices = len(three_simplices)
-        num_basis = len(basis)
-        curves_homology_in_basis = np.zeros((num_simplices, num_basis), dtype=int)
-
-        # 4. Unpack loops to manage list construction efficiently
-        for s_idx, s in enumerate(three_simplices):
-            s_list = list(s)
-            for i_idx, i in enumerate(basis):
-                s_i_list = s_list + [i]
-                total_intersection = 0
-                
-                for xy in xy_pairs:
-                    # 5. Use Python's built-in sorted() - vastly faster than np.sort() here
-                    key = tuple(sorted(s_i_list + xy))
-                    total_intersection += intersection_dict.get(key, 0)
-                
-                curves_homology_in_basis[s_idx, i_idx] = total_intersection
-
-        if as_LLL:
-            return (basis, UF.LLL_wrapper(curves_homology_in_basis))
-        return (basis, curves_homology_in_basis)
     
     def basis_homology_M(self, as_LLL=True):
         """Returns the basis of the homology of M."""

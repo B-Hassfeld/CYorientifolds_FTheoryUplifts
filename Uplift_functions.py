@@ -24,7 +24,6 @@ def contains_row(arr: np.array, target: np.array):
     """
     return np.any(np.all(arr == target, axis=1))
 
-#Checks whether np-array arr contains the rows of np-array targets
 def contains_rows(arr: np.array,targets: np.array):
     """
     **Description:**
@@ -38,7 +37,7 @@ def contains_rows(arr: np.array,targets: np.array):
     Boolean: All targets in arr
     """
     return np.any((targets[:, None, :] == arr[None, :, :]).all(axis=2), axis=1).all()
-#Returns the rows that are both in A and B
+
 def get_same_rows(A: np.array, B: np.array):
     """
     **Description:**
@@ -52,7 +51,7 @@ def get_same_rows(A: np.array, B: np.array):
     2d np.array: Rows that are both in A and B
     """
     return A[np.where((A[:, None, :] == B[None, :, :]).all(axis=2))[0]]
-#Checks whether np-arrays A and B have the same rows, possibly permuted
+
 def same_rows(A, B):
     """
     **Description:**
@@ -68,7 +67,7 @@ def same_rows(A, B):
     rowsA, countsA = np.unique(A, axis=0, return_counts=True)
     rowsB, countsB = np.unique(B, axis=0, return_counts=True)
     return np.array_equal(rowsA, rowsB) and np.array_equal(countsA, countsB)
-#Calculates the dual face of f, where f is a face of a Cayley polytope with vertices Cvert. Cdvert are the vertices of the dual Cayley Polytope. It returns a Polytope which is the face and NOT a Polytope face class element.
+
 def dual_face_Cay(Cvert: np.array,Cdvert: np.array,f):
     """
     **Description:**
@@ -105,7 +104,6 @@ def dual_face_Cayley_polytope(Cdvert: np.array,f):
     """
     return Polytope(Cdvert[np.all(Cdvert@f.vertices().T == 0, axis=1)])
     
-#Calculates the Hodge number h11 of a bipartite nef-partition CICY whose Caylex Polytope is Cay and the dual Cayley Polytope is Cayd
 def h11_2_part(Cay: Polytope,Cayd: Polytope,det=False):
     """
     **Description:**
@@ -118,7 +116,6 @@ def h11_2_part(Cay: Polytope,Cayd: Polytope,det=False):
     **Returns:**
     int: h11 of the CICY
     """
-    # Cvert=Cay.vertices()
     Cdvert=Cayd.vertices()
     n=Cay.dim()-1
     h11_ret=len(Cayd.points())-n-2
@@ -163,53 +160,7 @@ def h11_2_part(Cay: Polytope,Cayd: Polytope,det=False):
             for g in f.faces(2):
                 h11_ret=h11_ret-(len(g.interior_points())*k)
         
-    # if det:
-    #     print("After 2*(3-face)/codim-4 dual face: ",h11_ret)
-        
-    # for f in Cay.faces(3):
-    #     k=len(dual_face_Cayley_polytope(Cdvert,f).interior_points())
-    #     if k>0:
-    #         for g in f.faces(2):
-    #             h11_ret=h11_ret-(len(g.interior_points())*k)
-            
-    # if det:
-    #     print("After final 2-d dual of 3-d face: ",h11_ret)
-        
     return h11_ret
-# def h11_2_part(Cay: Polytope,Cayd: Polytope,det=False):
-#     Cvert=Cay.vertices()
-#     Cdvert=Cayd.vertices()
-#     n=Cay.dim()-1
-#     h11_ret=len(Cayd.points())-n-2
-#     if det:
-#         print("Trivial term: ",h11_ret)
-#     for f in Cayd.faces(n):
-#         h11_ret=h11_ret-len(Polytope(2*(f.vertices()-f.vertices()[0])).interior_points())
-#     if det:
-#         print("After 2*dual facets: ",h11_ret)
-#     for f in Cayd.faces(n-1):
-#         h11_ret=h11_ret+len(f.interior_points())
-#     if det:
-#         print("After dual codim-2: ",h11_ret)
-#     for f in Cay.faces(1):
-#         h11_ret=h11_ret+(len(f.interior_points())*(len(Polytope(2*(dual_face_Cay(Cvert,Cdvert,f).vertices())).interior_points())))
-#     if det: 
-#         print("After 1-face/2*codim-2 dual face: ",h11_ret)
-#     for f in Cay.faces(2):
-#         h11_ret=h11_ret-(len(Polytope(2*(f.vertices()-f.vertices()[0])).interior_points())*len(dual_face_Cay(Cvert,Cdvert,f).interior_points()))
-#     if det:
-#         print("After 2*(2-face)/codim-3 dual face: ",h11_ret)
-#     for f in Cay.faces(3):
-#         h11_ret=h11_ret+(len(Polytope(2*(f.vertices()-f.vertices()[0])).interior_points())*len(dual_face_Cay(Cvert,Cdvert,f).interior_points()))
-#     if det:
-#         print("After 2*(3-face)/codim-4 dual face: ",h11_ret)
-#     for f in Cay.faces(3):
-#         for g in Cay.faces(2):
-#             if contains_rows(f.vertices(),g.vertices()):
-#                 h11_ret=h11_ret-(len(g.interior_points())*len(dual_face_Cay(Cvert,Cdvert,f).interior_points()))
-#     if det:
-#         print("After final 2-d dual of 3-d face: ",h11_ret)
-#     return h11_ret
 
 def h21_2_part(Cay: Polytope,Cayd: Polytope,det=False):
     """
@@ -223,7 +174,6 @@ def h21_2_part(Cay: Polytope,Cayd: Polytope,det=False):
     **Returns:**
     int: h21 of the CICY
     """
-    # Cvert=Cay.vertices()
     Cdvert=Cayd.vertices()
     n=Cay.dim()-1
     h21_ret=0
@@ -247,7 +197,7 @@ def h21_2_part(Cay: Polytope,Cayd: Polytope,det=False):
             for g in f.faces(3):
                 h21_ret=h21_ret-len(g.interior_points())*k
     return h21_ret
-#return the indices of the target indices in the array arr
+
 def get_indices(arr: np.array,targets: np.array):
     """
     **Description:**
@@ -261,7 +211,7 @@ def get_indices(arr: np.array,targets: np.array):
     array: indices of targets in arr
     """
     return  np.where(np.any((arr[:, None, :] == targets).all(axis=2), axis=1))[0]
-#return the indices of the target indices in the array arr
+
 def get_index(arr: np.array,target: np.array):
     """
     **Description:**
@@ -275,7 +225,7 @@ def get_index(arr: np.array,target: np.array):
     int: index of target in arr
     """
     return  np.where(np.all(arr == target, axis=1))[0]
-#Returns the glsm Matrix given the rays of a toric fan
+
 def glsm_from_points(pts):
     """
     **Description:**
@@ -293,7 +243,7 @@ def glsm_from_points(pts):
     tt=np.array(t,dtype=int)
     rank_a=np.linalg.matrix_rank(aa)
     return tt.T[rank_a:]
-#Returns the rays of a toric fan given its glsm
+
 def points_from_glsm(glsm):
     """
     **Description:**
@@ -311,7 +261,7 @@ def points_from_glsm(glsm):
     VV=np.array(V,dtype=int)
     rank_D=np.linalg.matrix_rank(DD)
     return (UU[rank_D:].astype(int)).T
-#Returns the -1-layer vertex of a trilayer polytope
+
 def find_trilayer_vertex_polytope(p,as_index=False):
     """
     **Description:**
@@ -331,7 +281,7 @@ def find_trilayer_vertex_polytope(p,as_index=False):
         return index
     else:
         return p.vertices()[index]
-#Returns the -1-layer vertex of a trilayer polytope
+
 def find_trilayer_vertex_vertices(V,as_vertex_index=False):
     glsm_vert=glsm_from_points(V)
     half_anticanon = np.sum(glsm_vert, axis=1)//2
@@ -340,7 +290,7 @@ def find_trilayer_vertex_vertices(V,as_vertex_index=False):
         return index
     else:
         return V[index]
-#Returns the glsm matrix of a P[2,3,1] fibration over a base with GLSM glsm, twisted such that the Weierstrass equation can be defined. 
+
 def glsm_Weierstrass(glsm,line_bundle_weights):
     """
     Deprecated
@@ -358,6 +308,7 @@ def glsm_Weierstrass(glsm,line_bundle_weights):
     glsm_fiber[0][-2]=3
     glsm_fiber[0][-1]=1
     return np.concatenate((glsm_6,glsm_fiber),axis=0).astype(int)
+
 def is_trilayer(p,get_index=False):
     """
     Deprecated
@@ -373,11 +324,7 @@ def is_trilayer(p,get_index=False):
     if get_index:
         return is_tri,index
     return is_tri    
-    # col_sums=np.sum(glsm_from_points(p.vertices()),axis=0)
-    # is_tri=False
-    # if len(np.where(col_sums == np.sum(col_sums)/2)[0])==1:
-    #     is_tri=True
-    # return is_tri
+        
 def trilayer_normal_form(p):
     """
     Computes trilayer normal form of a polytope p
@@ -411,7 +358,7 @@ def trilayer_normal_form(p):
     for i in range(1,p.ambient_dim()):
         U0[i]=U0[i]+M[i,0]*U0[0]
     return Polytope((U0@verts.T).T)
-#Returns the Newton polytope of a linebundle of a toric variety. Input parameters are the rays of a fan and the line bundle weights when represented as a sum over prime toric divisors
+
 def Newton_Polytope(pts,weights):
     """
     Computes the Newton Polytope of a divisor with weights weights in a toric fan with rays in pts
@@ -423,7 +370,7 @@ def Newton_Polytope(pts,weights):
     Polytope: The Newton polytope of D
     """
     return h_polytope.HPolytope(np.column_stack([pts, weights]).astype(int))
-#Returns the rows of arrays A that also appear in B
+
 def get_same_rows(A: np.array, B: np.array):
     """
     Returns the common rows of A and B
@@ -434,7 +381,7 @@ def get_same_rows(A: np.array, B: np.array):
     np Matrix: Rows in A that are also in B
     """
     return A[np.where((A[:, None, :] == B[None, :, :]).all(axis=2))[0]]
-#Returns the rows of A that not appear in B
+
 def row_difference(A: np.array, B: np.array):
     """
     Returns all rows of A that are not in B
@@ -445,7 +392,7 @@ def row_difference(A: np.array, B: np.array):
     np Matrix: Rows in A that are not in B
     """
     return A[~np.any((A[:, None, :] == B[None, :, :]).all(axis=2), axis=1)]
-#Returns all points not interior to facets and codim 2 faces
+
 def points_not_interior_to_facets_and_codim2_faces(p: Polytope):
     """
     **Description:**
@@ -462,6 +409,7 @@ def points_not_interior_to_facets_and_codim2_faces(p: Polytope):
         if len(f.interior_points())>0:
             pts=np.delete(pts,get_indices(pts,f.interior_points()),axis=0)
     return pts
+    
 def rotate_points(pts,pts6):
     """
     Deprecated
@@ -483,7 +431,6 @@ def rotate_points(pts,pts6):
             ct=ct+1
         if ct==dimB:
             break
-    # M=np.round(B1.T@np.linalg.inv(B2.T)).astype(int)
     M6=np.block([[np.round(B1.T@np.linalg.inv(B2.T)).astype(int),np.zeros((dimB,2),dtype=int)],[np.zeros((2,dimB),dtype=int),np.eye(pts6.shape[1]-dimB)]]).astype(int)
     return (M6@pts6.T).T
 def glsm_uplift_toric_base(glsm):
@@ -514,28 +461,6 @@ def get_lower_dimensional_cones(cones,d):
     A list of all d-dimensional cones
     """
     return list({combo for row in cones for combo in combinations(row, d)})
-# def get_Weierstrass_intersections(pts,cones,x,include_neg_intersections=False,check=True):
-#     vc=VectorConfiguration(pts)
-#     TF=Fan(vc=vc,cones=cones)
-#     int_numbers=TF.intersection_numbers(check=check)
-#     x_ind=get_index(pts,x)+1
-#     intersections_x = {k: v for k, v in int_numbers.items() if 150 in k and (k.count(0)==0) and (k.count(150) <= 2) and all(x == 150 or k.count(x) == 1 for x in k)}
-#     if include_neg_intersections:   
-#         return intersections_x,{k:v for k, v in intersections_x.items() if v < -0.001}
-#     else:
-#         return intersections_x
-# def get_Base_intersections(pts,cones,LBB,include_neg_intersections=False,check=True):
-#     vc=VectorConfiguration(pts)
-#     TF=toricfan.ToricFan(vc=vc,cones=cones)
-#     int_numbers=TF.intersection_numbers(check=check)
-#     A_set=set(LBB+1)
-#     intersections_B = {k: v for k, v in int_numbers.items() if any((a in k) and (k.count(0) == 0) and (k.count(a) <= 2) and all(x == a or k.count(x) == 1 for x in k) for a in A_set)}
-#     if include_neg_intersections:   
-#         return intersections_x,{k:v for k, v in intersections_x.items() if v<-0.001}
-#     else:
-#         return intersections_x
-
-
 
 def lattice_refinement(q, denominator = 2):
 
@@ -622,31 +547,6 @@ def toric_orbifold(vc_triangulation,q,denominator=2,resolve_A1_singularities=Fal
         else:
             vc_triangulation_orbifold = Fan(vc_orbifold,cones=all_cones)
             blowup_labels = []
-
-            
-            # all_cones=list(vc_triangulation.cones())
-        #    for c in singular_two_cones:
-        #        arr=orbifold_points[np.array(c)-1]
-        #        # cone=Cone(arr)
-        #        vec=np.sum(arr,axis=0)
-        #        ind=get_index(orbifold_points,np.rint(vec/np.gcd.reduce(vec)).astype(int))[0]+1
-        #        for link in vc_triangulation.link(c):
-        #            t = tuple(sorted(c+link))
-        #            if t in all_cones:
-        #                all_cones.remove(tuple(sorted(c+link)))
-        #                if link in singular_two_cones:
-        #                    arr2=orbifold_points[np.array(link)-1]
-        #                    ind2=get_index(orbifold_points,np.rint(np.sum(arr2,axis=0)/np.gcd.reduce(vec)).astype(int))[0]+1
-        #                    for combs in combinations(c,len(c)-1):
-        #                        for combins in combinations(link,len(link)-1):
-        #                            all_cones.append(tuple(sorted(combs+combins+(ind,)+(ind2,))))
-        #                else:
-        #                    for combs in combinations(c,len(c)-1):
-        #                        all_cones.append(tuple(sorted(combs+link+(ind,))))
-            # orbifold_fan=Fan(vc=vcorb,cones=all_cones)
-        
-        #blowup_labels = np.arange(len(orbifold_points)-len(orbifold_blowups),len(orbifold_points))+1
-        #vc_triangulation_orbifold = Fan(vc_orbifold,cones=all_cones)
         
         return (vc_triangulation_orbifold,rescalings,blowup_labels)
     if is_fan:
@@ -946,16 +846,14 @@ def integer_kernel_basis(A):
     if isinstance(A, np.ndarray):
         A = A.tolist()
 
-    AT = fmpz_mat(A).transpose()      # n x m
-    H, T = AT.hnf(transform=True)     # H = T * A^T, with T unimodular
+    AT = fmpz_mat(A).transpose()      
+    H, T = AT.hnf(transform=True)     
 
-    # rank = number of nonzero rows of H
     rank = sum(
         any(int(H[i, j]) != 0 for j in range(H.ncols()))
         for i in range(H.nrows())
     )
 
-    # last n-rank rows of T give a Z-basis of ker(A)
     basis = []
     for i in range(rank, T.nrows()):
         v = np.array([int(T[i, j]) for j in range(T.ncols())], dtype=object)
@@ -992,7 +890,7 @@ def integer_rowspan_basis(A):
     if isinstance(A, np.ndarray):
         A = A.tolist()
 
-    H = fmpz_mat(A).hnf()   # row Hermite normal form
+    H = fmpz_mat(A).hnf()  
     H = np.array(H.tolist()).astype(int)
     zero_pos = np.where(sum(abs(H.T))==0)[0]
     basis = np.delete(H,zero_pos,0)
@@ -1123,14 +1021,10 @@ def sums_to_anticacnonical(pts,L1,L2):
     b_float = (1 - np.array(L1) - np.array(L2)).astype(float)
     
     try:
-        # Solve the system using least squares
         x_float, residuals, rank, s = np.linalg.lstsq(pts_float, b_float, rcond=None)
         
-        # Round the result to the nearest integer
         x_int = np.round(x_float).astype(int)
         
-        # Verify if this integer vector perfectly satisfies the original equation
-        # We use object arrays here so the verification never overflows
         pts_exact = np.array(pts, dtype=object)
         b_exact = 1 - np.array(L1) - np.array(L2)
         
@@ -1138,7 +1032,7 @@ def sums_to_anticacnonical(pts,L1,L2):
             return True, x_int
             
     except np.linalg.LinAlgError:
-        pass # Matrix is completely broken or singular in a way lstsq can't handle
+        pass 
         
     return False, None
 
@@ -1155,7 +1049,7 @@ def is_partition(points, L1,L2):
     **Returns:**
     Tuple (bool,bool,principle_div,principle_div) given by (is_partition,sums_to_anticanonical,principal divisor L1 needs to be shifted, principal divisor L2 needs to be shifted)
     """
-    # Returns (is_nef_partition,sums_to_anticanonical,principal shift of L1, principal shift of L2)
+    
     sums_to_anticanonical=sums_to_anticacnonical(points,L1,L2)
     if sums_to_anticanonical[0]==False:
         return (False,False,np.zeros(points.shape[1],dtype=int),np.zeros(points.shape[1],dtype=int))
@@ -1314,7 +1208,6 @@ def normal_fan_OLD(polytopes):
     """
     
     if type(polytopes)==type([]):
-        # construct Minkowski sum
         msum_vertices = nested_sum([p.vertices() for p in polytopes])
         p = Polytope(np.unique(flatten(msum_vertices,len(polytopes)-1),axis=0))
         vertex_split = np.array([np.array(np.where(np.all(np.array(msum_vertices)-v==0,axis=-1))).T[0] for v in p.vertices()])
@@ -1328,7 +1221,6 @@ def normal_fan_OLD(polytopes):
     cones = [[int(np.where(np.all(normal_fan_edges-x==0,axis=1))[0][0])+1 for x in np.delete(s.T,-1,0).T] for s in hyperplane_saturations]
 
     if type(polytopes)==type([]):
-        # extract weights of divisors
         vertices_to_vertices_map = [vertex_split[np.where([i in c for c in cones])[0][0]] for i in range(1,len(normal_fan_edges)+1)]
         weights = np.array([-np.array([polytopes[j].vertices()[x] for j,x in enumerate(pointers)])@(normal_fan_edges[i]) for i,pointers in enumerate(vertices_to_vertices_map)])
     
@@ -1353,7 +1245,6 @@ def normal_fan(polytopes,inequalities=None,maximal_refinement=False,triangulate_
     """
     
     if type(polytopes)==type([]):
-        # construct Minkowski sum
         msum_vertices = nested_sum([p.vertices() for p in polytopes])
         p = Polytope(np.unique(flatten(msum_vertices,len(polytopes)-1),axis=0))
         vertex_split = np.array([np.array(np.where(np.all(np.array(msum_vertices)-v==0,axis=-1))).T[0] for v in p.vertices()])
@@ -1363,14 +1254,12 @@ def normal_fan(polytopes,inequalities=None,maximal_refinement=False,triangulate_
 
     hyperplane_saturations = [p.inequalities()[np.where(x==0)[0]] for x in (np.vstack([p.vertices().T,[1]*len(p.vertices())]).T@(p.inequalities().T))]
     normal_fan_edges = np.delete(p.inequalities().T,-1,0).T
-    # gb=integral_gale_transform(normal_fan_edges)
     normal_fan_vc = VectorConfiguration(normal_fan_edges)
     cones = [[int(np.where(np.all(normal_fan_edges-x==0,axis=1))[0][0])+1 for x in np.delete(s.T,-1,0).T] for s in hyperplane_saturations]
     n_fan = Fan(vc=normal_fan_vc,cones=cones)
 
 
     if type(polytopes)==type([]):
-        # extract weights of divisors
         vertices_to_vertices_map = [vertex_split[np.where([i in c for c in cones])[0][0]] for i in range(1,len(normal_fan_edges)+1)]
         weights = np.array([-np.array([polytopes[j].vertices()[x] for j,x in enumerate(pointers)])@(normal_fan_edges[i]) for i,pointers in enumerate(vertices_to_vertices_map)])
 
@@ -1385,8 +1274,6 @@ def normal_fan(polytopes,inequalities=None,maximal_refinement=False,triangulate_
         raise Exception('Inequalities must be given to construct maximal refinement')
 
     inequalities=np.array(inequalities)
-    # if len(inequalities.shape)==1:
-    #     inequalities = np.array([inequalities])
     
     n_vectors=n_fan.vectors()
     if np.max((1-weights[:,0])*inequalities[0]-weights[:,1])>=inequalities[-1]:
@@ -1395,7 +1282,6 @@ def normal_fan(polytopes,inequalities=None,maximal_refinement=False,triangulate_
         else:
             return (None,None)
     if np.min((1-weights[:,0])*inequalities[0]-weights[:,1])<0:
-        # print("<0")
         if return_unrefined_fan:
             return (None,None,None)
         else:
@@ -1412,7 +1298,6 @@ def normal_fan(polytopes,inequalities=None,maximal_refinement=False,triangulate_
             print("XXX")
             return (None,None)
 
-    # obtain maximal set of blow up divisors
     maximal_blow_ups = [h_polytope.HPolytope(np.vstack([[np.concatenate([np.delete(inequalities,-1,0)@np.array([polytopes[j].vertices()[x] 
                 for j,x in enumerate(vertex_split[i])]),[inequalities[-1]]])],np.vstack([(p.vertices()-m).T, [0]*len(p.vertices())]).T ])).points() 
                         for i,m in enumerate(p.vertices())]
@@ -1421,12 +1306,10 @@ def normal_fan(polytopes,inequalities=None,maximal_refinement=False,triangulate_
                                        for x in np.delete(b,np.where(np.all(b==0,axis=1))[0][0],0)],axis=0) 
                             for b in maximal_blow_ups]
 
-    # extract weights
     all_vectors = np.unique(np.array([y for x in maximal_blow_ups for y in x]),axis=0)
     all_weights = np.array([-np.array([(pol.vertices()[vertex_split[np.where([np.any(np.all(y-x==0,axis=-1)) for y in maximal_blow_ups])[0][0]][j]])@x for x in all_vectors]) 
                         for j,pol in enumerate(polytopes)])
 
-    # reorder to put vectors already present in normal fan first
     old_indices = np.where([type(n_fan.vc.vectors_to_labels(v))!=type(None) for v in all_vectors])[0]
     blow_up_weights = np.delete(all_weights.T,old_indices,0)
     blow_up_vectors = np.delete(all_vectors,old_indices,0)
@@ -1443,10 +1326,6 @@ def normal_fan(polytopes,inequalities=None,maximal_refinement=False,triangulate_
             return (vc_total,all_weights)
 
         
-    # vc_by_face = [VectorConfiguration(vecs) for vecs in maximal_blow_ups]
-    # cones_by_face = [[vc_total.vectors_to_labels(vc.vectors(c)) for c in vc.triangulate(make_fine=True).cones()] for vc in vc_by_face]
-    # cones_total = [tuple(c) for cs in cones_by_face for c in cs]
-    # return (vc_total.triangulate(cells=cones_total),all_weights)
     if return_unrefined_fan:
         return (refine_fan(make_simplicial(n_fan),all_vectors),all_weights,n_fan)
     else:
@@ -1632,16 +1511,12 @@ def trilayer_5d_Ftheory_uplift(p,verbosity=1):
     
     p_dim = p.dim()
 
-    # Extract trilayer facet as 3d polytope
     p3 = Polytope(np.delete(p.points()[np.where(p.points().T[0]==1)[0]].T,0,0).T)
 
-    # Define Newton polytope Delta associated with -2K
     p2KB = Newton_Polytope(p3.points(),len(p3.points())*[2])
 
-    # Construct its normal fan
     n_fan,wts,cns = normal_fan(p2KB)
 
-    # Maximally blow up normal fan (such that generic section of -2K_B has at most linear overall factors)
     cone_hyperplanes = [Cone(n_fan.vectors(c)).dual().rays() for c in cns]
     blown_up = [h_polytope.HPolytope(np.vstack([np.vstack([h.T,[0]*len(h)]).T,[np.concatenate([p2KB.vertices()[i],[2]]),np.concatenate([-p2KB.vertices()[i],[-1]])]])).points()  
                 for i,h in enumerate(cone_hyperplanes)]
@@ -1650,22 +1525,18 @@ def trilayer_5d_Ftheory_uplift(p,verbosity=1):
     all_vecs = np.unique([i for b in blown_up for i in b],axis=0)
     full_vc = VectorConfiguration(all_vecs)
 
-    # Find all linear factors (which correspond to rigid O7 planes)
     monomials = Newton_Polytope(full_vc.vectors(),[2]*len(full_vc.vectors())).points()@(full_vc.vectors().T)+np.array([2]*len(full_vc.vectors()))
     O7pos = np.where(np.array([min(m) for m in monomials.T])==1)[0]
 
-    # Construct singular F-theory uplift
     vx = np.concatenate([[0]*(p_dim-1),[3,1]])
     vy = np.concatenate([[0]*(p_dim-1),[-2,-1]])
     vz = np.concatenate([[0]*(p_dim-1),[0,1]])
     uplift_vecs_singular = np.vstack([np.vstack([full_vc.vectors().T,[[0]*len(full_vc.vectors()),[1]*len(full_vc.vectors())]]).T,[vx,vy,vz]])
 
-    # Add resolutions of D4 singularities
     D4res1 = uplift_vecs_singular[O7pos]+vx+2*vy
     D4res2 = 2*uplift_vecs_singular[O7pos]+2*vx+3*vy
     uplift_vecs = np.vstack([uplift_vecs_singular,D4res1,D4res2])
 
-    # Final polytope
     p5 = Polytope(uplift_vecs)
     
     return p5
@@ -1795,8 +1666,6 @@ def lattice_index(mat):
     A=Matrix(mat,domain=ZZ)
     snf = smith_normal_form(A)
     
-    # The index is the product of the diagonal entries
-    # We iterate up to A.rows (which is n)
     s=np.array(snf,dtype=int)
     l_ind=np.prod([s[i][i] for i in range(np.min(s.shape))])
     
@@ -1812,29 +1681,21 @@ def integral_gale_transform(points):
     if n <= d + 1:
         raise ValueError(f"Need strictly more points (n={n}) than dimensions + 1 (d+1={d+1}).")
 
-    # Step 1: Lift points to homogenous coordinates
     lifted_points = np.hstack((points, np.ones((n, 1))))
     
-    # Step 2: Convert to a SymPy Matrix (exact rational math)
     A = Matrix(lifted_points.T)
     
-    # Step 3: Compute the exact null space
-    # SymPy returns a list of column vectors containing rational fractions
     null_basis_vectors = A.nullspace()
     
     if not null_basis_vectors:
         return np.array([])
         
-    # Combine into a single matrix
     B = Matrix.hstack(*null_basis_vectors)
     
-    # Step 4: Clear denominators to force integers
-    # We multiply each column by the least common multiple (LCM) of its denominators
     for j in range(B.cols):
         LCM = lcm([fraction(B[i, j])[1] for i in range(B.rows)])
         B[:, j] = B[:, j] * LCM
         
-    # Step 5: Transpose so the rows are your Gale transformed points, and convert back to NumPy
     gale_points = np.array(B.T).astype(int)
     
     return gale_points
