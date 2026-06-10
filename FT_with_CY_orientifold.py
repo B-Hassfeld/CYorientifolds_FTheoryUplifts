@@ -1,4 +1,5 @@
-from cytools import Polytope
+
+from cytools import Polytope, h_polytope
 import numpy as np 
 from cytools.vector_config import VectorConfiguration
 from cytools.vector_config.fan import Fan
@@ -283,7 +284,44 @@ class F_Theory_Uplift():
         self.__LBB_N = LBB_N + self.points_smooth_uplift() @ is_partition[2]
         self.__LBW_N = LBW_N + self.points_smooth_uplift() @ is_partition[3]
         self.__is_partition = is_partition[0]
-
+    # def __set_divisor_representations(self):
+    #     """Sets up the Base and Weierstrass line bundle arrays and verifies the partition status."""
+    #     n_sing = len(self.points_orbifold()) + 3
+    #     n_smooth = len(self.points_smooth_uplift())
+    #     LBB_N = np.zeros(n_smooth, dtype=int)
+    #     LBW_N = np.zeros(n_smooth, dtype=int)
+        
+    #     LBB_N[:n_sing-3] = self.line_bundle_orbifold()
+    #     LBW_N[n_sing-3] = 3
+        
+    #     NHC = self.NHC(as_labels=True) - 1
+    #     if len(NHC) > 0:
+    #         cont = np.where(self.line_bundle_orbifold() != 0)[0]
+    #         nhc_cont = np.where(np.isin(NHC, cont))[0]
+    #         for n in nhc_cont:
+    #             contribution_n = self.line_bundle_orbifold()[NHC[n]]
+    #             LBB_N[2*n + n_sing] = 1 * contribution_n
+    #             LBB_N[2*n + 1 + n_sing] = 2 * contribution_n
+                
+    #     sta=UF.sums_to_anticacnonical(self.points_smooth_uplift(),LBB_N,LBW_N)
+    #     LBW_N=self.points_smooth_uplift()@sta[1]+LBW_N
+    #     ineqs1=np.concatenate((self.points_smooth_uplift(),LBW_N[:,None]),axis=1)
+    #     ineqs2=np.concatenate((-self.points_smooth_uplift(),1-LBW_N[:,None]),axis=1)
+    #     ineqs=np.concatenate((ineqs1,ineqs2),axis=0)
+    #     self.__is_partition = False
+    #     try:
+    #         shift_pol=h_polytope.HPolytope(ineqs)
+    #         if len(shift_pol.points())>0:
+    #             m=shift_pol.points()[0]
+    #             self.__is_partition = True
+    #             LBW_N=self.points_smooth_uplift()@m+LBW_N
+    #             LBB_N=-self.points_smooth_uplift()@m+LBB_N
+    #     except ValueError as e:
+    #         if not "No lattice points in the Polytope!" in str(e):
+    #             print("XXX")
+    #     self.__LBB_N = LBB_N
+    #     self.__LBW_N = LBW_N
+        
     def orientifold(self):
         """Returns the underlying CY_orientifold instance."""
         return self.__CY_orientifold
