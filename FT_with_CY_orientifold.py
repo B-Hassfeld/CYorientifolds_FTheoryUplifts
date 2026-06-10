@@ -290,7 +290,10 @@ class F_Theory_Uplift():
         """Checks if the geometric structure represents a nef-partition."""
         if self.__is_nef_partition is None:
             if self.is_partition():
-                if self.pol_N_conv().is_reflexive() and self.pol_N_sum().is_reflexive():
+                if self.made_nef_and_Cartier:
+                    self.__is_nef_partition = True
+                    return True
+                if self.pol_N_conv().is_reflexive():
                     self.__is_nef_partition = True
                     return True        
             self.__is_nef_partition = False        
