@@ -757,3 +757,15 @@ class F_Theory_Uplift():
             self.__basis_homology_N = UF.basis_H2_toric_fan(self.smooth_uplift_toric_fan())
         return self.__basis_homology_N
     
+    def nef_partition_N(self):
+        """Returns the nef partition of N."""
+        if self.is_nef_partition():
+            return (tuple(np.where(self.line_bundle_base_N()==1)[0]),tuple(np.where(self.line_bundle_weierstrass_N()==1)[0]))
+        else:
+            return ((),())
+    def nef_partition_M(self):
+        """Returns the nef partition of M."""
+        if self.is_nef_partition():
+            return (tuple(np.where(self.line_bundle_base_M()==1)[0]),tuple(np.where(self.line_bundle_weierstrass_M()==1)[0]))
+        else:
+            return ((),())
