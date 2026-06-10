@@ -8,7 +8,7 @@ class CY_orientifold():
     """
     Class representing a Calabi-Yau orientifold constructed from toric data.
     """
-    def __init__(self, fan_polytope_or_points=None, xi=None, resolve_A1_singularities=True, triangulate_points=False, make_Cartier_and_nef=False):
+    def __init__(self, fan_polytope_or_points=None, xi=None, resolve_A1_singularities=True, triangulate_points=False, construct_nef_decomposition=True):
         """
         Initializes the Calabi-Yau orientifold.
 
@@ -17,15 +17,15 @@ class CY_orientifold():
             xi: The orientifold action/vector.
             resolve_A1_singularities (bool): Whether to resolve A1 singularities in the geometry.
             triangulate_points (bool): Whether to triangulate the fan points upon initialization.
-            make_Cartier_and_nef (bool): Whether to enforce Cartier and nef conditions on the line bundles.
+            construct_nef_decomposition (bool): Whether to enforce Cartier and nef conditions on the line bundles.
         """
         self.__p = None
         self.__toric_fan = None
         self.__xi = None
         self.__orbifold_toric_fan = None
         self.__orbifold_line_bundle = None
-        self.__made_Cartier_and_nef = False
-        self.__resolvable = False
+        self._yields_nef_decomposition = None
+        self.__regular = None
         self.__normal_fan = None
         self.__Newton_Polytope = None
         self.__triangulated = False
@@ -69,12 +69,13 @@ class CY_orientifold():
         orbifold_line_bundle = UF.O3O7_line_bundle(vc_triangulation=toric_fan, q=xi, rescalings=rescalings, resolve_A1_singularities=resolve_A1_singularities)
         
         if orbifold_line_bundle is None:
-            self.__resolvable = False
+            self.__regular = False
         else:
-            self.__resolvable = ~UF.generic_section_factorizes(orbifold_fan.vectors(), orbifold_line_bundle)
+            self.__regular = ~UF.generic_section_factorizes(orbifold_fan.vectors(), orbifold_line_bundle)
         
-        if self.__resolvable:
-            if make_Cartier_and_nef:
+        if self.__regular:
+            if construct_nef_decomposition:
+                self._yields_nef_decomposition=False
                 multiplier = 6
                 KB_multiplier = UF.Newton_Polytope(orbifold_fan.vectors(), self._multiplier * (np.ones(len(orbifold_line_bundle), dtype=int) - orbifold_line_bundle))
                 if len(KB_multiplier.points()) > 0:
@@ -84,22 +85,24 @@ class CY_orientifold():
                         orbifold_max_refined, line_bundles, normal_fan = UF.normal_fan([NP_orbifold, KB_multiplier], np.array([self._multiplier, 1, self._multiplier]), maximal_refinement=True, triangulate_refinement=triangulate_points, return_unrefined_fan=True)
                         if orbifold_max_refined is not None:
                             if UF.contains_rows(orbifold_max_refined.vectors(), orbifold_fan.vectors()):
-                                self.__made_Cartier_and_nef = True
+                                self._yields_nef_decomposition = True
                                 self.__normal_fan = normal_fan
                                 orbifold_fan = orbifold_max_refined
                                 orbifold_line_bundle = line_bundles[:, 0]
-
+            
+        else:
+            self._yields_nef_decomposition=False
         self.__orbifold_toric_fan = orbifold_fan
         self.__orbifold_line_bundle = orbifold_line_bundle
-        
         if triangulate_points:
             self.triangulate()
+        
 
     def orbifold_toric_fan(self):
-        """Returns the toric fan associated with the orbifold."""
+        """Returns the toric fan of the toric orbifold."""
         return self.__orbifold_toric_fan
 
-    def base_toric_fan(self):
+    def CY_ambient_toric_fan(self):
         """Returns the underlying base toric fan before orbifolding."""
         return self.__toric_fan
 
@@ -107,17 +110,17 @@ class CY_orientifold():
         """Returns the vectors (points) of the orbifold toric fan."""
         return self.orbifold_toric_fan().vectors(c)
 
-    def points_base(self, c=None):
+    def points_CY_ambient(self, c=None):
         """Returns the vectors (points) of the base toric fan."""
-        return self.base_toric_fan().vectors(c)
+        return self.CY_ambient_toric_fan().vectors(c)
 
     def xi(self):
         """Returns the orientifold action/vector xi."""
         return self.__xi
 
-    def resolvable(self):
-        """Returns True if the generic section does not factorize, making it resolvable."""
-        return self.__resolvable
+    def is_regular(self):
+        """Returns True if the CY orientifold is regular."""
+        return self.__regular
 
     def line_bundle(self):
         """Returns the O3/O7 orbifold line bundle."""
@@ -143,9 +146,9 @@ class CY_orientifold():
         self.__orbifold_line_bundle = line_bundle
         self.__Newton_Polytope = None
         if line_bundle is None:
-            self.__resolvable = False
+            self.__regular = False
         else:
-            self.__resolvable = ~UF.generic_section_factorizes(orbifold_fan.vectors(), line_bundle)
+            self.__regular = ~UF.generic_section_factorizes(orbifold_fan.vectors(), line_bundle)
 
     def Newton_Polytope(self):
         """Computes and caches the Newton Polytope for the orbifold configuration."""
@@ -157,14 +160,14 @@ class CY_orientifold():
         """Checks if the internal fan geometry has been triangulated."""
         return self.__triangulated
 
-    def made_Cartier_and_nef(self):
+    def yields_nef_decomposition(self):
         """Checks if the geometry was successfully forced to be Cartier and nef."""
-        return self.__made_Cartier_and_nef
+        return self._yields_nef_decomposition
 
     def triangulate(self):
         """Triangulates the base fan and refines the orbifold fan accordingly."""
         if not self.triangulated():
-            if self.made_Cartier_and_nef():
+            if self.yields_nef_decomposition():
                 self.__orbifold_toric_fan = UF.refine_fan(UF.make_simplicial(self.normal_fan()), self.points_orbifold())
             else:
                 self.__toric_fan = self.__toric_fan.triangulate()
@@ -178,7 +181,7 @@ class F_Theory_Uplift():
     Class handling the uplifting of an orientifold to an F-Theory geometric model.
     Manages properties related to partitions, nef-partitions, and Hodge numbers.
     """
-    def __init__(self, orientifold_or_points=None, xi=None, resolve_A1_singularities=True, make_Cartier_and_nef=False, triangulate_points=False, details=False):
+    def __init__(self, orientifold_or_points=None, xi=None, resolve_A1_singularities=False, construct_nef_decomposition=True, triangulate_points=False):
         """
         Initializes the F-Theory Uplift model.
 
@@ -186,9 +189,8 @@ class F_Theory_Uplift():
             orientifold_or_points: Can be an existing CY_orientifold instance or raw point data.
             xi: The orientifold action vector.
             resolve_A1_singularities (bool): Resolution flag for A1 singularities.
-            make_Cartier_and_nef (bool): Enforce Cartier and nef conditions.
+            construct_nef_decomposition (bool): Attempts to construct a nef decomposition.
             triangulate_points (bool): Auto-triangulate singular and smooth uplifts.
-            details (bool): Flag for verbose output (unused in init).
         """
         self.__blowups = None
         self.__Cayley_M = None
@@ -227,8 +229,8 @@ class F_Theory_Uplift():
         self.__chi = None
         self.__is_nef_partition = None
         self.__is_partition = None
-        self.__resolvable = None
-        self.made_nef_and_Cartier = False
+        self.__is_regular = None
+        # self.made_nef_and_Cartier = False
         self.__triangulated = triangulate_points
         self.__CY_orientifold = None
 
@@ -236,10 +238,10 @@ class F_Theory_Uplift():
             case CY_orientifold():
                 self.__CY_orientifold = orientifold_or_points
             case _:
-                self.__CY_orientifold = CY_orientifold(orientifold_or_points, xi=xi, resolve_A1_singularities=resolve_A1_singularities, triangulate_points=triangulate_points, make_Cartier_and_nef=make_Cartier_and_nef)
+                self.__CY_orientifold = CY_orientifold(orientifold_or_points, xi=xi, resolve_A1_singularities=resolve_A1_singularities, triangulate_points=triangulate_points, construct_nef_decomposition=construct_nef_decomposition)
         self.__triangulated = self.__CY_orientifold.triangulated()
-        if self.resolvable():
-            self.__set_singular_toric_fan()
+        if self.is_regular():
+            # self.__set_singular_toric_fan()
             if self.__triangulated:
                 self.__triangulate_singular_uplift()
                 self.__triangulate_smooth_uplift()
@@ -248,7 +250,7 @@ class F_Theory_Uplift():
             self.__is_nef_partition=False
 
     def __set_singular_toric_fan(self):
-        """Constructs the generic singular F-theory uplift fan."""
+        """Constructs the fan of the ambient space of the generically singular F-theory uplift."""
         self.x = np.concatenate((np.zeros(self.ambient_dim_base(), dtype=int), np.array([3, 1])))
         self.y = np.concatenate((np.zeros(self.ambient_dim_base(), dtype=int), np.array([-2, -1])))
         self.z = np.concatenate((np.zeros(self.ambient_dim_base(), dtype=int), np.array([0, 1])))
@@ -289,13 +291,10 @@ class F_Theory_Uplift():
     def is_nef_partition(self):
         """Checks if the geometric structure represents a nef-partition."""
         if self.__is_nef_partition is None:
-            if self.is_partition():
-                if self.made_nef_and_Cartier:
+            if self.is_nef_decomposition():
+                if self.is_partition():
                     self.__is_nef_partition = True
                     return True
-                if self.pol_N_conv().is_reflexive():
-                    self.__is_nef_partition = True
-                    return True        
             self.__is_nef_partition = False        
         return self.__is_nef_partition
         
@@ -317,6 +316,8 @@ class F_Theory_Uplift():
 
     def singular_uplift_toric_fan(self):            
         """Returns the previously computed singular uplift toric fan."""
+        if self.__singular_uplift_toric_fan is None:
+            self.__set_singular_toric_fan()
         return self.__singular_uplift_toric_fan
         
     def Cayley_M(self):
@@ -461,20 +462,20 @@ class F_Theory_Uplift():
             self.__intersection_numbers_singular_uplift = self.singular_uplift_toric_fan().intersection_numbers()
         return self.__intersection_numbers_singular_uplift
         
-    def h11(self, details=False):
+    def h11(self):
         """Computes the Hodge number h11 using the Batyrev formulas for nef-partitions."""
         if self.is_nef_partition():
             if self.__h11 is None:
-                self.__h11 = UF.h11_2_part(self.Cayley_M(), self.Cayley_N(), det=details)
+                self.__h11 = UF.h11_2_part(self.Cayley_M(), self.Cayley_N())
             return self.__h11 
         else: 
             raise ValueError("Hodge Numbers can only be computed for nef-partitions")
         
-    def h31(self, details=False):
+    def h31(self):
         """Computes the Hodge number h31 using the Batyrev formulas for nef-partitions."""
         if self.is_nef_partition():
             if self.__h31 is None:
-                self.__h31 = UF.h11_2_part(self.Cayley_N(), self.Cayley_M(), det=details)
+                self.__h31 = UF.h11_2_part(self.Cayley_N(), self.Cayley_M())
             return self.__h31
         else: 
             raise ValueError("Hodge Numbers can only be computed for nef-partitions")
@@ -644,9 +645,9 @@ class F_Theory_Uplift():
         """Returns the vectors of the orbifold fan."""
         return self.orbifold_toric_fan().vectors(labels)
     
-    def points_base(self, labels=None):
+    def points_CY_ambient(self, labels=None):
         """Returns the vectors of the initial fan."""
-        return self.base_toric_fan().vectors(labels)
+        return self.CY_ambient_toric_fan().vectors(labels)
     
     def dim_base(self):
         """Returns the dimension of the base orientifold."""
@@ -656,9 +657,9 @@ class F_Theory_Uplift():
         """Returns the ambient dimension of the base orientifold."""
         return self.orientifold().ambient_dim()
 
-    def base_toric_fan(self):
+    def CY_ambient_toric_fan(self):
         """Returns the fan of the initial toric variety."""
-        return self.orientifold().base_toric_fan()
+        return self.orientifold().CY_ambient_toric_fan()
 
     def orbifold_toric_fan(self):
         """Returns the orbifold toric fan."""
@@ -740,9 +741,9 @@ class F_Theory_Uplift():
             
         self.__smooth_uplift_toric_fan = new_fan
         
-    def resolvable(self):
-        """Checks if the underlying orientifold geometry is fully resolvable."""
-        return self.orientifold().resolvable()
+    def is_regular(self):
+        """Checks if the underlying orientifold geometry is regular."""
+        return self.orientifold().is_regular()
 
     def normal_fan(self):
         """Returns the normal fan of the underlying base structure."""
@@ -772,3 +773,8 @@ class F_Theory_Uplift():
             return (tuple(np.where(self.line_bundle_base_M()==1)[0]),tuple(np.where(self.line_bundle_weierstrass_M()==1)[0]))
         else:
             return ((),())
+    def is_nef_decomposition(self):
+        if self.orientifold().yields_nef_decomposition() is None:
+            self.orientifold()._yields_nef_decomposition = self.pol_M_sum().is_reflexive()
+        return self.orientifold().yields_nef_decomposition()
+            
