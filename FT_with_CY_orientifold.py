@@ -716,7 +716,7 @@ class F_Theory_Uplift():
             cones6.add(c + (x_pts6, z_pts6))
             cones6.add(c + (y_pts6, z_pts6))
             
-        self.__singular_uplift_toric_fan = Fan(vc=self.__singular_uplift_toric_fan, cones=cones6)
+        self.__singular_uplift_toric_fan = Fan(vc=self.singular_uplift_toric_fan(), cones=cones6)
         
     def __triangulate_smooth_uplift(self):
         """Performs internal triangulation by inserting exceptional blowup divisors recursively."""
