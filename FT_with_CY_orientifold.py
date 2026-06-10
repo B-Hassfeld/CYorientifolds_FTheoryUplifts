@@ -1,4 +1,3 @@
-
 from cytools import Polytope, h_polytope
 import numpy as np 
 from cytools.vector_config import VectorConfiguration
@@ -27,6 +26,8 @@ class CY_orientifold():
         self.__orbifold_line_bundle = None
         self._yields_nef_decomposition = None
         self.__regular = None
+        self.__pts_orbifold = None
+        self.__pts_base=None
         self.__normal_fan = None
         self.__Newton_Polytope = None
         self.__triangulated = False
@@ -219,6 +220,8 @@ class F_Theory_Uplift():
         self.__basis_homology_N = None
         self.__normal_fan = None
         self.__singular_uplift_toric_fan = None
+        self.__pts_singular_uplift=None
+        self.__pts_smooth_uplift=None
         self.__smooth_uplift_toric_fan = None
         self.__orbifold_toric_fan = None
         self.x = None
@@ -267,10 +270,8 @@ class F_Theory_Uplift():
         n_smooth = len(self.points_smooth_uplift())
         LBB_N = np.zeros(n_smooth, dtype=int)
         LBW_N = np.zeros(n_smooth, dtype=int)
-        
         LBB_N[:n_sing-3] = self.line_bundle_orbifold()
         LBW_N[n_sing-3] = 3
-        
         NHC = self.NHC(as_labels=True) - 1
         if len(NHC) > 0:
             cont = np.where(self.line_bundle_orbifold() != 0)[0]
@@ -279,11 +280,38 @@ class F_Theory_Uplift():
                 contribution_n = self.line_bundle_orbifold()[NHC[n]]
                 LBB_N[2*n + n_sing] = 1 * contribution_n
                 LBB_N[2*n + 1 + n_sing] = 2 * contribution_n
+        is_part=UF.compute_partition([LBB_N, LBW_N],self.points_smooth_uplift())
+        if is_part[0]:
+            self.__LBB_N = is_part[1][0]
+            self.__LBW_N = is_part[1][1]
+        else:
+            sta=UF.sums_to_anticacnonical(self.points_smooth_uplift(),LBB_N,LBW_N)
+            self.__LBB_N = LBB_N
+            self.__LBW_N = self.points_smooth_uplift()@sta[1]+LBW_N
+        self.__is_partition = is_part[0]
+    # def __set_divisor_representations(self):
+    #     """Sets up the Base and Weierstrass line bundle arrays and verifies the partition status."""
+    #     n_sing = len(self.points_orbifold()) + 3
+    #     n_smooth = len(self.points_smooth_uplift())
+    #     LBB_N = np.zeros(n_smooth, dtype=int)
+    #     LBW_N = np.zeros(n_smooth, dtype=int)
+        
+    #     LBB_N[:n_sing-3] = self.line_bundle_orbifold()
+    #     LBW_N[n_sing-3] = 3
+        
+    #     NHC = self.NHC(as_labels=True) - 1
+    #     if len(NHC) > 0:
+    #         cont = np.where(self.line_bundle_orbifold() != 0)[0]
+    #         nhc_cont = np.where(np.isin(NHC, cont))[0]
+    #         for n in nhc_cont:
+    #             contribution_n = self.line_bundle_orbifold()[NHC[n]]
+    #             LBB_N[2*n + n_sing] = 1 * contribution_n
+    #             LBB_N[2*n + 1 + n_sing] = 2 * contribution_n
                 
-        is_partition = UF.is_partition(self.points_smooth_uplift(), LBB_N, LBW_N)
-        self.__LBB_N = LBB_N + self.points_smooth_uplift() @ is_partition[2]
-        self.__LBW_N = LBW_N + self.points_smooth_uplift() @ is_partition[3]
-        self.__is_partition = is_partition[0]
+    #     is_partition = UF.is_partition(self.points_smooth_uplift(), LBB_N, LBW_N)
+    #     self.__LBB_N = LBB_N + self.points_smooth_uplift() @ is_partition[2]
+    #     self.__LBW_N = LBW_N + self.points_smooth_uplift() @ is_partition[3]
+    #     self.__is_partition = is_partition[0]
     # def __set_divisor_representations(self):
     #     """Sets up the Base and Weierstrass line bundle arrays and verifies the partition status."""
     #     n_sing = len(self.points_orbifold()) + 3
