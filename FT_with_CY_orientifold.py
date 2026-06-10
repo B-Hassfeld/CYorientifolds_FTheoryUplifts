@@ -3,7 +3,7 @@ from cytools import Polytope, h_polytope
 import numpy as np 
 from cytools.vector_config import VectorConfiguration
 from cytools.vector_config.fan import Fan
-import Uplift_functions as UF
+from . import Uplift_functions as UF
 
 class CY_orientifold():
     """
