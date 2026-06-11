@@ -35,7 +35,7 @@ def compute_partition(divisors,rays):
     integrality = np.ones_like(c)
 
     constraints = LinearConstraint(linear, lower, upper)
-    res = milp(c=c, constraints=constraints, integrality=integrality)
+    res = milp(c=c, constraints=constraints, integrality=integrality, bounds = [-np.inf,np.inf])
     sol0 = res.x
 
     if type(sol0)!=type(None):
