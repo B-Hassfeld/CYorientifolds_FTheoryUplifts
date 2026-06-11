@@ -69,12 +69,10 @@ class CY_orientifold():
         
         orbifold_fan, rescalings, orbifold_blowups_labels = UF.toric_orbifold(vc_triangulation=toric_fan, q=xi, resolve_A1_singularities=resolve_A1_singularities)
         orbifold_line_bundle = UF.O3O7_line_bundle(vc_triangulation=toric_fan, q=xi, rescalings=rescalings, resolve_A1_singularities=resolve_A1_singularities)
-        
         if orbifold_line_bundle is None:
             self.__regular = False
         else:
             self.__regular = ~UF.generic_section_factorizes(orbifold_fan.vectors(), orbifold_line_bundle)
-        
         if self.__regular:
             if construct_nef_decomposition:
                 self._yields_nef_decomposition=False
@@ -295,7 +293,7 @@ class F_Theory_Uplift():
     #     n_smooth = len(self.points_smooth_uplift())
     #     LBB_N = np.zeros(n_smooth, dtype=int)
     #     LBW_N = np.zeros(n_smooth, dtype=int)
-        
+    #     print(self.line_bundle_orbifold())
     #     LBB_N[:n_sing-3] = self.line_bundle_orbifold()
     #     LBW_N[n_sing-3] = 3
         
@@ -307,7 +305,8 @@ class F_Theory_Uplift():
     #             contribution_n = self.line_bundle_orbifold()[NHC[n]]
     #             LBB_N[2*n + n_sing] = 1 * contribution_n
     #             LBB_N[2*n + 1 + n_sing] = 2 * contribution_n
-                
+    #     print(LBB_N)
+    #     print(LBW_N)
     #     is_partition = UF.is_partition(self.points_smooth_uplift(), LBB_N, LBW_N)
     #     self.__LBB_N = LBB_N + self.points_smooth_uplift() @ is_partition[2]
     #     self.__LBW_N = LBW_N + self.points_smooth_uplift() @ is_partition[3]
