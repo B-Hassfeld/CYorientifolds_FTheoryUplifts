@@ -32,6 +32,8 @@ class CY_orientifold():
         self.__intersection_numbers_orbifold = None
         self.__normal_fan = None
         self.__Newton_Polytope = None
+        self.__NHC_labels = None
+        self.__line_bundle_6KB_movable = None
         self.ambient_triangulation = False
         self._multiplier = 6
         match fan_polytope_or_points:
@@ -95,6 +97,9 @@ class CY_orientifold():
                             orbifold_pts = orbifold_pts_refined
                             orbifold_line_bundle = line_bundles[:, 0]
                             self.ambient_triangulation=False
+                            self.__line_bundle_6KB_movable = line_bundles[:, 1]
+                            self.__NHC_labels = np.where(self._multiplier*(1-orbifold_line_bundle)-self.__line_bundle_6KB_movable==3)[0]+1
+                            
             
         else:
             self.__yields_nef_decomposition=False
@@ -233,6 +238,29 @@ class CY_orientifold():
         if self.__intersection_numbers_orbifold is None:
             self.__intersection_numbers_orbifold = self.orbifold_toric_fan().intersection_numbers()
         return self.__intersection_numbers_orbifold
+
+    def NHC(self,as_labels=False):
+        if self.__NHC_labels is None:
+            sections_NP2 = UF.sections(self.vectors_orbifold(), 2 * (1 - self.line_bundle()))
+            if len(sections_NP2) > 0:
+                self.__NHC_labels = np.where(np.min(sections_NP2, axis=1) == 1)[0] + 1
+            else:
+                self.__NHC_labels = np.array([])
+        if as_labels:
+            return self.__NHC_labels
+        else:
+            if len(self.__NHC_labels)==0:
+                return np.array([])
+            return self.vectors_orbifold(self.__NHC_labels)
+
+    def line_bundle_6KB_movable(self):
+        return self.__line_bundle_6KB_movable
+
+
+
+
+
+
 
 class F_Theory_Uplift():
     """
@@ -513,7 +541,13 @@ class F_Theory_Uplift():
     def vectors_singular_uplift_ambient(self, labels=None):
         """Returns points of the singular uplift fan, optionally filtered by labels."""
         if self.__pts_singular_uplift is None:
-            self.__set_singular_toric_fan()
+            self.x = np.concatenate((np.zeros(self.ambient_dim_base(), dtype=int), np.array([3, 1])))
+            self.y = np.concatenate((np.zeros(self.ambient_dim_base(), dtype=int), np.array([-2, -1])))
+            self.z = np.concatenate((np.zeros(self.ambient_dim_base(), dtype=int), np.array([0, 1])))
+            coordinates231 = (1 - self.line_bundle_orbifold())[:, None] @ self.z[-2:][None, :]
+            pts6 = np.concatenate((self.vectors_orbifold(), coordinates231), axis=1)
+            pts6 = np.concatenate((pts6, np.array([self.x, self.y, self.z])), axis=0)
+            self.__pts_singular_uplift=pts6
         if labels is None:
             return self.__pts_singular_uplift
         return self.__pts_singular_uplift[np.array(labels)-1]
@@ -726,19 +760,20 @@ class F_Theory_Uplift():
     
     def NHC(self, as_labels=False):
         """Returns the Non-Higgsable Clusters (NHC) in the base space."""
-        if self.__NHC_labels is None:
-            sections_NP2 = UF.sections(self.vectors_orbifold(), 2 * (1 - self.line_bundle_orbifold()))
-            if len(sections_NP2) > 0:
-                self.__NHC_labels = np.where(np.min(sections_NP2, axis=1) >= 1)[0] + 1
-            else:
-                self.__NHC_labels = np.array([])
+        # if self.__NHC_labels is None:
+        #     sections_NP2 = UF.sections(self.vectors_orbifold(), 2 * (1 - self.line_bundle_orbifold()))
+        #     if len(sections_NP2) > 0:
+        #         self.__NHC_labels = np.where(np.min(sections_NP2, axis=1) >= 1)[0] + 1
+        #     else:
+        #         self.__NHC_labels = np.array([])
                 
-        if as_labels:
-            return self.__NHC_labels
-        else:
-            if len(self.__NHC_labels) > 0:
-                return self.vectors_orbifold(self.__NHC_labels)
-            return self.__NHC_labels
+        # if as_labels:
+        #     return self.__NHC_labels
+        # else:
+        #     if len(self.__NHC_labels) > 0:
+        #         return self.vectors_orbifold(self.__NHC_labels)
+        #     return self.__NHC_labels
+        return self.orientifold().NHC(as_labels)
 
     def NHC_singular_uplift(self, as_labels=False):
         """Returns the Non-Higgsable Clusters of the singular uplift fan."""
