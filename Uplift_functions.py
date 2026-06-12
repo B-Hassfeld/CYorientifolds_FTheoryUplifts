@@ -31,18 +31,21 @@ def compute_partition(divisors,rays):
     lower = np.concatenate([lower1,lower2])
     upper = np.concatenate([upper1,upper2])
 
-    c = np.array([1]*len(linear[0]))
+    c = np.zeros(linear.shape[1])
     integrality = np.ones_like(c)
 
     constraints = LinearConstraint(linear, lower, upper)
-    res = milp(c=c, constraints=constraints, integrality=integrality, bounds = [-np.inf,np.inf])
-    sol0 = res.x
+    res = milp(c=np.zeros(linear.shape[1]),
+               constraints=constraints,
+               integrality=np.ones(linear.shape[1]),
+               bounds=(-np.inf, np.inf))
+    
+    if not res.success or res.x is None:
+        return (False, None)
 
-    if type(sol0)!=type(None):
-        sol = np.rint(sol0.reshape(len(divisors),len(rays[0]))@(rays.T)+np.array(divisors)).astype(int)
-        return (True,sol)
-    else:
-        return (False,None)
+    sol = np.rint(res.x.reshape(len(divisors),len(rays[0]))@(rays.T)+np.array(divisors)).astype(int)
+    return (True,sol)
+
 def contains_row(arr: np.array, target: np.array):
     """
     **Description:**
