@@ -103,28 +103,28 @@ def same_rows(A, B):
     rowsB, countsB = np.unique(B, axis=0, return_counts=True)
     return np.array_equal(rowsA, rowsB) and np.array_equal(countsA, countsB)
 
-def dual_face_Cay(Cvert: np.array,Cdvert: np.array,f):
-    """
-    **Description:**
-    Computes the dual face of a face f of a Cayley polytope
+# def dual_face_Cay(Cvert: np.array,Cdvert: np.array,f):
+#     """
+#     **Description:**
+#     Computes the dual face of a face f of a Cayley polytope
     
-    **Arguments:**
-    - `Cvert` *(np array)*: Vertices of the polytope
-    - `Cdvert` *(np array)*: Vertices of the dual Cayley polytope
+#     **Arguments:**
+#     - `Cvert` *(np array)*: Vertices of the polytope
+#     - `Cdvert` *(np array)*: Vertices of the dual Cayley polytope
 
-    **Returns:**
-    Polytope: Dual face
-    """
-    Sw=np.empty((0, 8))
-    for i in range(len(Cdvert)):
-        m=np.min(Cdvert[i]@Cvert.T)
-        Si=np.empty((0, 8))
-        for ff in Cvert:
-            if Cdvert[i]@ff.T==m:
-                Si= np.vstack([Si, ff]).astype(int)
-        if contains_rows(Si,f.vertices()):
-            Sw=np.vstack([Sw,Cdvert[i]]).astype(int)
-    return Polytope(Sw)
+#     **Returns:**
+#     Polytope: Dual face
+#     """
+#     Sw=np.empty((0, 8))
+#     for i in range(len(Cdvert)):
+#         m=np.min(Cdvert[i]@Cvert.T)
+#         Si=np.empty((0, 8))
+#         for ff in Cvert:
+#             if Cdvert[i]@ff.T==m:
+#                 Si= np.vstack([Si, ff]).astype(int)
+#         if contains_rows(Si,f.vertices()):
+#             Sw=np.vstack([Sw,Cdvert[i]]).astype(int)
+#     return Polytope(Sw)
 
 def dual_face_Cayley_polytope(Cdvert: np.array,f):
     """
@@ -1144,6 +1144,7 @@ def basis(points):
             basis_indices.append(i)
         if len(basis_indices) == d:
             return basis_indices
+    raise ValueError("No basis could be found")
 
 
 def sums_to_anticanonical(pts,L1,L2):
@@ -1192,8 +1193,8 @@ def is_partition(points, L1,L2):
     Tuple (bool,bool,principle_div,principle_div) given by (is_partition,sums_to_anticanonical,principal divisor L1 needs to be shifted, principal divisor L2 needs to be shifted)
     """
     
-    sums_to_anticanonical=sums_to_anticanonical(points,L1,L2)
-    if sums_to_anticanonical[0]==False:
+    sta=sums_to_anticanonical(points,L1,L2)
+    if sta[0]==False:
         return (False,False,np.zeros(points.shape[1],dtype=int),np.zeros(points.shape[1],dtype=int))
         
     basis_indices=basis(points)
@@ -1217,7 +1218,7 @@ def is_partition(points, L1,L2):
             valid_upper = (dot_products == 1 - L2)
             
             if np.all(valid_lower | valid_upper):
-                return (True,True,sums_to_anticanonical[1]-m2_int,m2_int)
+                return (True,True,sta[1]-m2_int,m2_int)
     else:
         basis_vecs_pseudo=basis_vectors@basis_vectors.T
         for target_comb in product(*possible_targets):
@@ -1235,9 +1236,9 @@ def is_partition(points, L1,L2):
             valid_upper = (dot_products == 1 - L2)
             
             if np.all(valid_lower | valid_upper):
-                return (True,True,sums_to_anticanonical[1]-m2_int,m2_int)
+                return (True,True,sta[1]-m2_int,m2_int)
             
-    return (False,True,np.zeros(points.shape[1],dtype=int),sums_to_anticanonical[1])
+    return (False,True,np.zeros(points.shape[1],dtype=int),sta[1])
     
 def attempt_to_make_Cartier(tri,D):
     """
@@ -1437,7 +1438,6 @@ def normal_fan_NEW(polytopes,inequalities=None,maximal_refinement=False,triangul
         for i in range(len(polytopes)):
             tot+=inequalities[i]*n_vectors[vec_index]@(polytopes[i].vertices()[vertex_split[c_index][i]])
         if tot>=0:
-            print("XXX")
             return (None,None)
 
     maximal_blow_ups = [h_polytope.HPolytope(np.vstack([[np.concatenate([np.delete(inequalities,-1,0)@np.array([polytopes[j].vertices()[x] 
@@ -1661,8 +1661,7 @@ def basis_H2_toric_fan(toric_fan):
             mask[np.array(c)-1]=False
             basis = np.arange(1,len(mask)+1)[mask]
             return basis
-            break
-    return None
+    raise ValueError("No basis could be found")
 
 
 
