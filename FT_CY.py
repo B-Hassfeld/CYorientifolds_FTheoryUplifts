@@ -124,7 +124,7 @@ class CY_orientifold():
         orbifold_blowups=[]
         if len(singular_two_cones)>0:
             for c in singular_two_cones:
-                vec=np.sum(self.CY_ambient_toric_fan().vectors(c),axis=0)
+                vec=np.sum(self.vectors_orbifold(c),axis=0)
                 vec_add=np.rint(vec/np.gcd.reduce(vec)).astype(int)
                 orbifold_blowups.append(vec_add.tolist())
             orbifold_blowups=np.array(orbifold_blowups)
