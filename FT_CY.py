@@ -287,7 +287,7 @@ class F_Theory_Uplift():
             case _:
                 self.__CY_orientifold = CY_orientifold(orientifold_or_points, xi=xi, resolve_A1_singularities=resolve_A1_singularities, triangulate_points=triangulate_points, construct_nef_decomposition=construct_nef_decomposition)
         self.__blowups_labels = None
-        self.__triangulated = self.__CY_orientifold.triangulated()
+        self.__triangulated = self.__CY_orientifold.is_triangulated()
         if self.is_regular():
             if self.__triangulated:
                 self.__triangulate_singular_uplift()
