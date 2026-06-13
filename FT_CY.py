@@ -664,14 +664,20 @@ class F_Theory_Uplift():
         return self.orientifold().line_bundle()
         
     def M_conv_toric_fan(self):
+        """Returns the fan resulting from a triangulation of the primitive interior rays of the M-conv polytope."""
+        if not self.is_partition():
+            raise ValueError("Uplift is not a partition")
         if self.__M_conv_toric_fan is None:
             index0 = UF.get_index(self.points_not_interior_to_codim_1_and_2_face_M(),np.zeros(len(self.points_not_interior_to_codim_1_and_2_face_M()[0]),dtype=int))[0]
             pts=np.delete(self.points_not_interior_to_codim_1_and_2_face_M(),index0,axis=0)
+            # pts=np.unique(UF.primitive_rows(pts),axis=0)
             self.__M_conv_toric_fan = VectorConfiguration(pts).triangulate()
         return self.__M_conv_toric_fan
 
     def divisor_intersection_M(self, as_LLL=True):
-        """Computes the curve homology intersections in the N basis."""
+        """Computes the curve homology intersections in the M basis."""
+        if not self.is_nef_partition():
+            raise ValueError("Uplift is not a nef-partition")
             
         fan = self.M_conv_toric_fan()
         intersection_dict = self.intersection_numbers_M_conv()

@@ -2000,3 +2000,11 @@ def find_cone(new_ray, current_cones, all_vectors, tol=1e-10):
             )
 
     return None
+
+def primitive_rows(A):
+    A = np.asarray(A, dtype=int)
+
+    row_gcds = np.gcd.reduce(np.abs(A), axis=1, keepdims=True)
+    row_gcds[row_gcds == 0] = 1   # protects all-zero rows
+
+    return A // row_gcds
