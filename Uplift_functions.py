@@ -221,9 +221,10 @@ def h21_2_part(Cay: Polytope,Cayd: Polytope,det=False):
     if det:
         print(h21_ret)
     for f in Cay.faces(3):
-        for g in Cay.faces(2):
-            if contains_rows(f.vertices(),g.vertices()):
-                h21_ret=h21_ret-len(g.interior_points())*len(dual_face_Cayley_polytope(Cdvert,f).interior_points())
+        k=len(dual_face_Cayley_polytope(Cdvert,f).interior_points())
+        if k>0:
+            for g in f.faces(2):
+                h21_ret=h21_ret-len(g.interior_points())*k
     if det: 
         print(h21_ret)
     for f in Cay.faces(4):
@@ -812,7 +813,7 @@ def Gorenstein_index(cone):
     if is_reflexive_Gorenstein(cone):
         dual_cone=cone.dual()
         return is_Gorenstein(cone)[1]@is_Gorenstein(dual_cone)[1]
-    raise(ValueError,"Cone is not reflexive Gorenstein")
+    raise ValueError("Cone is not reflexive Gorenstein")
 
 
 def Cartier_index(toric_fan,weights):
@@ -1796,7 +1797,7 @@ def refine_fan(fan,blowups_or_all_vectors=None):
     else:
         for label in to_be_refined:
             all_cones=set(new_fan.cones())
-            link_base=tuple(find_cone_general(vc_all.vectors(label),all_cones,all_vectors))
+            link_base=tuple(find_cone_general(new_fan.vc.vectors(label),all_cones,all_vectors))
             link_base_len=len(link_base)
             for c in new_fan.link(link_base):
                 all_cones.discard(tuple(sorted(link_base + c)))

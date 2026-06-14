@@ -202,7 +202,7 @@ class CY_orientifold():
                 NHC_inds=self.NHC(as_labels=True)-1
                 NHClb[NHC_inds]=1
                 lb=self._multiplier*(1-self.line_bundle())-np.rint((self._multiplier/2)*NHClb).astype(int)
-                self.__yields_nef_decomposition = UF.is_Cartier(self.orbifold_toric_fan(),lb)[0] and UF.is_nef(self.orbifold_toric_fan(),lb) and self.is_Cartier(self.orbifold_toric_fan(),self.line_bundle())[0] and UF.is_nef(self.orbifold_toric_fan(),self.line_bundle())
+                self.__yields_nef_decomposition = UF.is_Cartier(self.orbifold_toric_fan(),lb)[0] and UF.is_nef(self.orbifold_toric_fan(),lb) and UF.is_Cartier(self.orbifold_toric_fan(),self.line_bundle())[0] and UF.is_nef(self.orbifold_toric_fan(),self.line_bundle())
             else:
                 self.__yields_nef_decomposition = UF.contains_rows(self.vectors_orbifold(),self.normal_fan().vectors())
         return self.__yields_nef_decomposition
@@ -228,9 +228,6 @@ class CY_orientifold():
             if len(self.__NHC_labels)==0:
                 return np.array([])
             return self.vectors_orbifold(self.__NHC_labels)
-
-
-
 
 class F_Theory_Uplift():
     """
@@ -520,7 +517,7 @@ class F_Theory_Uplift():
                 ]))
             self.__blowups = bus
         if as_labels:
-            return np.arange(len(self.vectors_singular_uplift_ambient()),len(self.vectors_smooth_uplift_ambient())+1)
+            return np.arange(len(self.vectors_singular_uplift_ambient())+1,len(self.vectors_smooth_uplift_ambient())+1)
         return self.__blowups
         
     def points_not_interior_to_codim_1_and_2_face_M(self):
@@ -771,7 +768,10 @@ class F_Theory_Uplift():
     def h21(self):
         """Computes the Hodge number h21 via Cayley polytopes."""
         if self.__h21 is None:
-            self.__h21 = UF.h21_2_part(self.Cayley_N(), self.Cayley_M())
+            if self.is_nef_partition():
+                self.__h21 = UF.h21_2_part(self.Cayley_N(), self.Cayley_M())
+            else:
+                raise ValueError("Uplift is not a nef-partition")
         return self.__h21
 
     def chi(self):
@@ -824,7 +824,7 @@ class F_Theory_Uplift():
     def intersection_numbers_orbifold(self):
         return self.orientifold().intersection_numbers_orbifold()
 
-def fetch_orientifolds(only_nef_decomposition: bool=False,h11: int = None,h12: int = None,h13: int = None,
+def fetch_orientifolds(only_regular: bool=True, only_nef_decomposition: bool=False,h11: int = None,h12: int = None,h13: int = None,
     h21: int = None,h22: int = None,h31: int = None,chi: int = None,
     lattice: str = 'N',dim: int = 4,n_points: int = None,n_vertices: int = None,
     n_dual_points: int = None,n_facets: int = None,limit: int = 1000,
@@ -844,9 +844,13 @@ def fetch_orientifolds(only_nef_decomposition: bool=False,h11: int = None,h12: i
         for p in fetch_polytopes(h11,h12,h13,h21,h22,h31,chi,lattice,dim,n_points,n_vertices,n_dual_points,n_facets,limit,samples,sample_seed,timeout,as_list,backend,deterministic_glsm_basis,dualize,favorable,verbosity):
             for xi in UF.inequivalent_Z2_actions(p.automorphisms(action="left")):
                 O=CY_orientifold(p,xi)
-                yield O
+                if only_regular:
+                    if O.is_regular():
+                        yield O 
+                else:
+                    yield O
 
-def fetch_F_Theory_uplifts(only_nef_partition:bool=False,only_nef_decomposition: bool=False,h11: int = None,h12: int = None,h13: int = None,
+def fetch_F_Theory_uplifts(only_regular: bool = True, only_nef_partition:bool=False,only_nef_decomposition: bool=False,h11: int = None,h12: int = None,h13: int = None,
     h21: int = None,h22: int = None,h31: int = None,chi: int = None,
     lattice: str = 'N',dim: int = 4,n_points: int = None,n_vertices: int = None,
     n_dual_points: int = None,n_facets: int = None,limit: int = 1000,
@@ -865,5 +869,5 @@ def fetch_F_Theory_uplifts(only_nef_partition:bool=False,only_nef_decomposition:
         for O in fetch_orientifolds(only_nef_decomposition=True,h11=h11,h12=h12,h13=h13,h21=h21,h22=h22,h31=h31,chi=chi,lattice=lattice,dim=dim,n_points=n_points,n_vertices=n_vertices,n_dual_points=n_dual_points,n_facets=n_facets,limit=limit,samples=samples,sample_seed=sample_seed,timeout=timeout,as_list=as_list,backend=backend,deterministic_glsm_basis=deterministic_glsm_basis,dualize=dualize,favorable=favorable,verbosity=verbosity):
             yield F_Theory_Uplift(O)
     else:
-        for O in fetch_orientifolds(only_nef_decomposition=False,h11=h11,h12=h12,h13=h13,h21=h21,h22=h22,h31=h31,chi=chi,lattice=lattice,dim=dim,n_points=n_points,n_vertices=n_vertices,n_dual_points=n_dual_points,n_facets=n_facets,limit=limit,samples=samples,sample_seed=sample_seed,timeout=timeout,as_list=as_list,backend=backend,deterministic_glsm_basis=deterministic_glsm_basis,dualize=dualize,favorable=favorable,verbosity=verbosity):
+        for O in fetch_orientifolds(only_regular=only_regular, only_nef_decomposition=False,h11=h11,h12=h12,h13=h13,h21=h21,h22=h22,h31=h31,chi=chi,lattice=lattice,dim=dim,n_points=n_points,n_vertices=n_vertices,n_dual_points=n_dual_points,n_facets=n_facets,limit=limit,samples=samples,sample_seed=sample_seed,timeout=timeout,as_list=as_list,backend=backend,deterministic_glsm_basis=deterministic_glsm_basis,dualize=dualize,favorable=favorable,verbosity=verbosity):
             yield F_Theory_Uplift(O)
