@@ -210,7 +210,14 @@ class CY_orientifold():
     def yields_nef_decomposition(self):
         """Checks if the geometry was successfully forced to be Cartier and nef."""
         if self.__yields_nef_decomposition is None:
-            self.__yields_nef_decomposition = UF.contains_rows(self.vectors_orbifold(),self.normal_fan().vectors())
+            if self.ambient_triangulation:
+                NHClb=np.zeros(len(self.line_bundle()))
+                NHC_inds=self.NHC(as_labels=True)-1
+                NHClb[NHC_inds]=1
+                lb=self.line_bundle()-np.rint((self._multiplier/2)*NHClb).astype(int)
+                self.__yields_nef_decomposition = UF.is_Cartier(self.orbifold_toric_fan(),lb)[0] and UF.is_nef(self.orbifold_toric_fan(),lb)
+            else:
+                self.__yields_nef_decomposition = UF.contains_rows(self.vectors_orbifold(),self.normal_fan().vectors())
         return self.__yields_nef_decomposition
 
     # def triangulate(self):
@@ -306,7 +313,6 @@ class F_Theory_Uplift():
         self.__pts_singular_uplift=None
         self.__pts_smooth_uplift=None
         self.__smooth_uplift_toric_fan = None
-        # self.__orbifold_toric_fan = None
         self.x = None
         self.y = None
         self.z = None
@@ -317,7 +323,6 @@ class F_Theory_Uplift():
         self.__is_nef_partition = None
         self.__is_partition = None
         self.__is_nef_decomposition = None
-        # self.__triangulated = None
         self.__CY_orientifold = None
 
         match orientifold_or_points:
@@ -329,18 +334,6 @@ class F_Theory_Uplift():
         if not self.is_regular():
             self.__is_partition=False
             self.__is_nef_partition=False
-
-    # def __set_singular_toric_fan(self):
-    #     """Constructs the fan of the ambient space of the generically singular F-theory uplift."""
-    #     self.x = np.concatenate((np.zeros(self.ambient_dim_base(), dtype=int), np.array([3, 1])))
-    #     self.y = np.concatenate((np.zeros(self.ambient_dim_base(), dtype=int), np.array([-2, -1])))
-    #     self.z = np.concatenate((np.zeros(self.ambient_dim_base(), dtype=int), np.array([0, 1])))
-        
-    #     coordinates231 = (1 - self.line_bundle_orbifold())[:, None] @ self.z[-2:][None, :]
-    #     pts6 = np.concatenate((self.vectors_orbifold(), coordinates231), axis=1)
-    #     pts6 = np.concatenate((pts6, np.array([self.x, self.y, self.z])), axis=0)
-    #     self.__pts_singular_uplift=pts6
-    #     # self.__singular_uplift_toric_fan = VectorConfiguration(pts6)
 
     def __set_divisor_representations(self):
         """Sets up the Base and Weierstrass line bundle arrays and verifies the partition status."""
