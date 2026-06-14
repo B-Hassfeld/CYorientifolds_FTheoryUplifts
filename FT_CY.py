@@ -1,5 +1,5 @@
 import warnings
-from cytools import Polytope
+from cytools import Polytope, fetch_polytopes
 import numpy as np 
 from cytools.vector_config import VectorConfiguration
 from cytools.vector_config.fan import Fan
@@ -934,3 +934,46 @@ class F_Theory_Uplift():
             
     def intersection_numbers_orbifold(self):
         return self.orientifold().intersection_numbers_orbifold()
+
+
+
+def fetch_orientifolds(only_nef_decomposition: bool=False,h11: int = None,h12: int = None,h13: int = None,
+    h21: int = None,h22: int = None,h31: int = None,chi: int = None,
+    lattice: str = 'N',dim: int = 4,n_points: int = None,n_vertices: int = None,
+    n_dual_points: int = None,n_facets: int = None,limit: int = 1000,
+    samples: int = None,sample_seed: int = None,timeout: int = 60,
+    as_list: bool = True,backend: str = None,
+    deterministic_glsm_basis: bool = False,
+    dualize: bool = False,
+    favorable: bool = None,
+    verbosity: int = 0):
+    for p in fetch_polytopes(h11,h12,h13,h21,h22,h31,chi,lattice,dim,n_points,n_vertices,n_dual_points,n_facets,limit,samples,sample_seed,timeout,as_list,backend,deterministic_glsm_basis,dualize,favorable,verbosity):
+        for xi in UF.inequivalent_Z2_actions(p.automorphisms(action="left")):
+            O=CY_orientifold(p,xi)
+            if only_nef_decomposition:
+                if O.yields_nef_decomposition():
+                    yield O
+            else:
+                yield O
+
+def fetch_F_Theory_uplifts(only_nef_partition:bool=False,only_nef_decomposition: bool=False,h11: int = None,h12: int = None,h13: int = None,
+    h21: int = None,h22: int = None,h31: int = None,chi: int = None,
+    lattice: str = 'N',dim: int = 4,n_points: int = None,n_vertices: int = None,
+    n_dual_points: int = None,n_facets: int = None,limit: int = 1000,
+    samples: int = None,sample_seed: int = None,timeout: int = 60,
+    as_list: bool = True,backend: str = None,
+    deterministic_glsm_basis: bool = False,
+    dualize: bool = False,
+    favorable: bool = None,
+    verbosity: int = 0):
+    for p in fetch_polytopes(h11,h12,h13,h21,h22,h31,chi,lattice,dim,n_points,n_vertices,n_dual_points,n_facets,limit,samples,sample_seed,timeout,as_list,backend,deterministic_glsm_basis,dualize,favorable,verbosity):
+        for xi in UF.inequivalent_Z2_actions(p.automorphisms(action="left")):
+            F=F_Theory_Uplift(p,xi)
+            if only_nef_partition:
+                if F.is_nef_partition():
+                    yield F
+            elif only_nef_decomposition:
+                if F.is_nef_decomposition():
+                    yield F
+            else:
+                yield F

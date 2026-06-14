@@ -1,5 +1,5 @@
 from sympy.matrices.normalforms import smith_normal_form
-from cytools import Polytope, h_polytope, Cone
+from cytools import Polytope, h_polytope, Cone, fetch_polytopes
 import numpy as np 
 import math
 from flint import fmpz_mat
