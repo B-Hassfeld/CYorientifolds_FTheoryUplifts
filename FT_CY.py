@@ -74,8 +74,8 @@ class CY_orientifold():
         self.__dim = np.linalg.matrix_rank(pts,tol=1e-6)
         self.__xi = xi          
         
-        orbifold_pts, rescalings = UF.toric_orbifold_NEW(pts_CY_ambient=pts, q=xi)
-        orbifold_line_bundle = UF.O3O7_line_bundle_NEW(pts_CY_ambient=pts, q=xi, rescalings=rescalings)
+        orbifold_pts, rescalings = UF.toric_orbifold(pts_CY_ambient=pts, q=xi)
+        orbifold_line_bundle = UF.O3O7_line_bundle(pts_CY_ambient=pts, q=xi, rescalings=rescalings)
         if orbifold_line_bundle is None:
             self.__regular = False
         else:
@@ -90,7 +90,7 @@ class CY_orientifold():
                     NP_orbifold = UF.Newton_Polytope(orbifold_pts, orbifold_line_bundle)
                     self.__Newton_Polytope = NP_orbifold
                     if NP_orbifold.minkowski_sum(KB_multiplier).dim() == self.__dim:
-                        orbifold_pts_refined, line_bundles, normal_fan = UF.normal_fan_NEW([NP_orbifold, KB_multiplier], np.array([self._multiplier, 1, self._multiplier]), maximal_refinement=True, triangulate_refinement=False, return_unrefined_fan=True)
+                        orbifold_pts_refined, line_bundles, normal_fan = UF.normal_fan([NP_orbifold, KB_multiplier], np.array([self._multiplier, 1, self._multiplier]), maximal_refinement=True, triangulate_refinement=False, return_unrefined_fan=True)
                         if orbifold_pts_refined is not None:
                             self.__yields_nef_decomposition = True
                             self.__normal_fan = normal_fan
@@ -113,11 +113,6 @@ class CY_orientifold():
             if resolve_A1_singularities:
                 self.__resolve_A1_singularities()
 
-        
-
-        # if triangulate_points:
-        #     self.triangulate()
-
 
     def __resolve_A1_singularities(self):
         singular_two_cones = UF.Z2_fixed_locus(self.CY_ambient_toric_fan(),self.xi(),cone_dimension=2,denominator=2)
@@ -128,7 +123,7 @@ class CY_orientifold():
                 vec_add=np.rint(vec/np.gcd.reduce(vec)).astype(int)
                 orbifold_blowups.append(vec_add.tolist())
             orbifold_blowups=np.array(orbifold_blowups)
-            fan=UF.refine_fan_2(self.orbifold_toric_fan(),orbifold_blowups)
+            fan=UF.refine_fan(self.orbifold_toric_fan(),orbifold_blowups)
             self.__orbifold_pts=fan.vectors()
             blow_up_weights = np.rint(np.array([sum(self.line_bundle()[np.array(c)-1])-1 for c in singular_two_cones])/2).astype(int)
             self.__orbifold_line_bundle=np.concatenate((self.line_bundle(),blow_up_weights),axis=0)
@@ -146,7 +141,7 @@ class CY_orientifold():
                     nc=tuple(sorted([inds[x-1] for x in c]))
                     new_cones.add(nc)
                 new_fan=Fan(vc=VC,cones=new_cones)
-                self.__orbifold_toric_fan = UF.refine_fan_2(new_fan)
+                self.__orbifold_toric_fan = UF.refine_fan(new_fan)
             else:
                 self.__orbifold_toric_fan = Fan(VectorConfiguration(self.vectors_orbifold()),cones=self.CY_ambient_toric_fan().cones())
         return self.__orbifold_toric_fan
@@ -203,10 +198,6 @@ class CY_orientifold():
             self.__Newton_Polytope = UF.Newton_Polytope(self.vectors_orbifold(), self.line_bundle())
         return self.__Newton_Polytope
 
-    # def is_triangulated(self):
-    #     """Checks if the internal fan geometry has been triangulated."""
-    #     return self.__triangulated
-
     def yields_nef_decomposition(self):
         """Checks if the geometry was successfully forced to be Cartier and nef."""
         if self.__yields_nef_decomposition is None:
@@ -220,24 +211,6 @@ class CY_orientifold():
                 self.__yields_nef_decomposition = UF.contains_rows(self.vectors_orbifold(),self.normal_fan().vectors())
         return self.__yields_nef_decomposition
 
-    # def triangulate(self):
-    #     """Triangulates the base fan and refines the orbifold fan accordingly."""
-    #     if not self.is_triangulated():
-    #         if self.yields_nef_decomposition():
-    #             nf=UF.make_simplicial(self.normal_fan())
-    #             VC=VectorConfiguration(self.vectors_orbifold())
-    #             inds=VC.vectors_to_labels(nf.vectors())
-    #             new_cones=set()
-    #             for c in nf.cones():
-    #                 nc=tuple(sorted([inds[x-1] for x in c]))
-    #                 new_cones.add(nc)
-    #             new_fan=Fan(vc=VC,cones=new_cones)
-    #             self.__orbifold_toric_fan = UF.refine_fan_2(new_fan)
-    #         else:
-    #             # self.__toric_fan = self.CY_ambient_toric_fan().triangulate()
-    #             prelim_fan = Fan(self.orbifold_toric_fan(), cones=self.CY_ambient_toric_fan().cones())
-    #             self.__orbifold_toric_fan = UF.refine_fan(prelim_fan, self.vectors_orbifold())
-    #         self.__triangulated = True
     def polytope(self):
         return self.__p
 
@@ -759,19 +732,6 @@ class F_Theory_Uplift():
     
     def NHC(self, as_labels=False):
         """Returns the Non-Higgsable Clusters (NHC) in the base space."""
-        # if self.__NHC_labels is None:
-        #     sections_NP2 = UF.sections(self.vectors_orbifold(), 2 * (1 - self.line_bundle_orbifold()))
-        #     if len(sections_NP2) > 0:
-        #         self.__NHC_labels = np.where(np.min(sections_NP2, axis=1) >= 1)[0] + 1
-        #     else:
-        #         self.__NHC_labels = np.array([])
-                
-        # if as_labels:
-        #     return self.__NHC_labels
-        # else:
-        #     if len(self.__NHC_labels) > 0:
-        #         return self.vectors_orbifold(self.__NHC_labels)
-        #     return self.__NHC_labels
         return self.orientifold().NHC(as_labels)
 
     def NHC_singular_uplift(self, as_labels=False):
@@ -833,64 +793,6 @@ class F_Theory_Uplift():
         if self.__chi is None:
             self.__chi = 48 + 6 * (self.h11() + self.h31() - self.h21())
         return self.__chi
-
-    # def is_triangulated(self):
-    #     """Checks if the uplift geometries have been triangulated."""
-    #     return self.__triangulated
-
-    # def triangulate(self):
-    #     """ 
-    #     Triangulates the orbifold toric fan, the singular uplift and the smooth uplift 
-    #     toric fan compatibly with the fibration structure. Enforces nef and Cartier geometry if applicable.
-    #     """
-    #     if not self.is_triangulated():
-    #         self.__CY_orientifold.triangulate()    
-    #         self.__triangulate_singular_uplift()
-    #         self.__triangulate_smooth_uplift()
-    #         self.__triangulated = True
-
-    # def __triangulate_singular_uplift(self):
-    #     """Performs the internal triangulation logic for the singular F-theory uplift fan."""
-    #     cones6 = set()
-    #     x_pts6 = len(self.vectors_orbifold()) + 1
-    #     y_pts6 = x_pts6 + 1
-    #     z_pts6 = x_pts6 + 2
-        
-    #     for c in self.orbifold_toric_fan().cones():
-    #         cones6.add(c + (x_pts6, y_pts6))
-    #         cones6.add(c + (x_pts6, z_pts6))
-    #         cones6.add(c + (y_pts6, z_pts6))
-            
-    #     self.__singular_uplift_toric_fan = Fan(vc=self.singular_uplift_ambient_toric_fan(), cones=cones6)
-        
-    # def __triangulate_smooth_uplift(self):
-    #     """Performs internal triangulation by inserting exceptional blowup divisors recursively."""
-    #     n_sing_uplift = len(self.vectors_singular_uplift_ambient())
-    #     xlabel = n_sing_uplift - 2
-    #     ylabel = n_sing_uplift - 1
-    #     ct = 0
-    #     vc_smooth = self.smooth_uplift_ambient_toric_fan()
-        
-    #     all_cones = set(self.singular_uplift_ambient_toric_fan().cones())
-        
-    #     for xxx in self.NHC_singular_uplift(as_labels=True):
-    #         cone_target = set((xxx, xlabel, ylabel))
-    #         link_list = []
-    #         for c in list(all_cones):
-    #             if cone_target.issubset(c):
-    #                 link = tuple(v for v in c if v not in cone_target)
-    #                 link_list.append((c, link))
-            
-    #         for original_c, link in link_list:
-    #             all_cones.discard(original_c)
-    #             all_cones.add(tuple(sorted(link + (xxx, n_sing_uplift + 2*ct + 1, n_sing_uplift + 2*ct + 2))))
-    #             all_cones.add(tuple(sorted(link + (xxx, xlabel, n_sing_uplift + 2*ct + 2))))
-    #             all_cones.add(tuple(sorted(link + (xxx, ylabel, n_sing_uplift + 2*ct + 1))))
-    #             all_cones.add(tuple(sorted(link + (xlabel, ylabel, n_sing_uplift + 2*ct + 1))))
-    #             all_cones.add(tuple(sorted(link + (xlabel, n_sing_uplift + 2*ct + 1, n_sing_uplift + 2*ct + 2))))
-    #         ct += 1
-            
-    #     self.__smooth_uplift_toric_fan = Fan(vc=vc_smooth, cones=all_cones)
         
     def is_regular(self):
         """Checks if the underlying orientifold geometry is regular."""

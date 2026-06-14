@@ -522,75 +522,75 @@ def lattice_refinement(q, denominator = 2):
     
     return np.rint(Lambda*denominator).astype(int)
 
-def toric_orbifold(vc_triangulation,q,denominator=2,resolve_A1_singularities=False):
+# def toric_orbifold_OLD(vc_triangulation,q,denominator=2,resolve_A1_singularities=False):
 
-    """
-    **Description:**
-    Constructs toric orbifold defined via lattice refinement q/denominator
+#     """
+#     **Description:**
+#     Constructs toric orbifold defined via lattice refinement q/denominator
 
-    **Arguments:**
-    - `vc_triangulation` *(triangulation of vector configuration)*: a simplicial toric variety
-    - `q` *(list of integers or numpy array)*: scaled up co-prime lattice refinement vector
-    - `denominator` *(int, optional, default=2)*: denominator of q/denominator
+#     **Arguments:**
+#     - `vc_triangulation` *(triangulation of vector configuration)*: a simplicial toric variety
+#     - `q` *(list of integers or numpy array)*: scaled up co-prime lattice refinement vector
+#     - `denominator` *(int, optional, default=2)*: denominator of q/denominator
 
-    **Returns:**
-    tuple of (toric variety, array of rescalings of edges of toric fan)
-    """
-    match vc_triangulation:
-        case Fan():
-            is_fan=True
-            all_cones=list(vc_triangulation.cones())
-        case VectorConfiguration():
-            resolve_A1_singularities=False
-            is_fan=False
-        case _:
-            raise(ValueError,"Input must be a VectorConfiguration or a fan")
+#     **Returns:**
+#     tuple of (toric variety, array of rescalings of edges of toric fan)
+#     """
+#     match vc_triangulation:
+#         case Fan():
+#             is_fan=True
+#             all_cones=list(vc_triangulation.cones())
+#         case VectorConfiguration():
+#             resolve_A1_singularities=False
+#             is_fan=False
+#         case _:
+#             raise(ValueError,"Input must be a VectorConfiguration or a fan")
             
-    Lambda = lattice_refinement(q,denominator)
-    orbifold_points = vc_triangulation.vectors()@(Lambda.T)
-    rescalings = np.array([math.gcd(*list(i)) for i in orbifold_points])
-    orbifold_points = np.rint((orbifold_points.T/rescalings).T).astype(int)
-    vc_orbifold = VectorConfiguration(orbifold_points)
-    orbifold_blowups=[]
+#     Lambda = lattice_refinement(q,denominator)
+#     orbifold_points = vc_triangulation.vectors()@(Lambda.T)
+#     rescalings = np.array([math.gcd(*list(i)) for i in orbifold_points])
+#     orbifold_points = np.rint((orbifold_points.T/rescalings).T).astype(int)
+#     vc_orbifold = VectorConfiguration(orbifold_points)
+#     orbifold_blowups=[]
     
-    if resolve_A1_singularities:
-        singular_two_cones = Z2_fixed_locus(vc_triangulation,q,cone_dimension=2,denominator=denominator)
+#     if resolve_A1_singularities:
+#         singular_two_cones = Z2_fixed_locus(vc_triangulation,q,cone_dimension=2,denominator=denominator)
 
-        if len(singular_two_cones)>0:
-            for c in singular_two_cones:
-                vec=np.sum(orbifold_points[np.array(c)-1],axis=0)
-                vec_add=np.rint(vec/np.gcd.reduce(vec)).astype(int)
-                orbifold_blowups.append(vec_add.tolist())
-            orbifold_blowups=np.array(orbifold_blowups)
-            orbifold_points=np.vstack([orbifold_points,orbifold_blowups])
-            vc_orbifold=VectorConfiguration(orbifold_points)
-            rescalings=np.concatenate((rescalings,2*np.ones(len(orbifold_blowups),dtype=int)))
+#         if len(singular_two_cones)>0:
+#             for c in singular_two_cones:
+#                 vec=np.sum(orbifold_points[np.array(c)-1],axis=0)
+#                 vec_add=np.rint(vec/np.gcd.reduce(vec)).astype(int)
+#                 orbifold_blowups.append(vec_add.tolist())
+#             orbifold_blowups=np.array(orbifold_blowups)
+#             orbifold_points=np.vstack([orbifold_points,orbifold_blowups])
+#             vc_orbifold=VectorConfiguration(orbifold_points)
+#             rescalings=np.concatenate((rescalings,2*np.ones(len(orbifold_blowups),dtype=int)))
     
-            blowup_labels = np.arange(len(orbifold_points)-len(orbifold_blowups),len(orbifold_points))+1
-            vc_triangulation_orbifold = vc_triangulation
-            for ind,c in enumerate(singular_two_cones):
-                blowup_index = int(blowup_labels[ind])
-                links = vc_triangulation_orbifold.link(c)
-                old_cones = [tuple(sorted(list(l)+list(c))) for l in links]
-                new_cones = [tuple(sorted(list(l)+[c[0],blowup_index])) for l in links]+[tuple(sorted(list(l)+[c[1],blowup_index])) for l in links]
-                for cc in old_cones:
-                    all_cones.remove(cc)
-                for cc in new_cones:
-                    all_cones.append(cc)
-                vc_triangulation_orbifold = Fan(vc_orbifold,cones=all_cones)
+#             blowup_labels = np.arange(len(orbifold_points)-len(orbifold_blowups),len(orbifold_points))+1
+#             vc_triangulation_orbifold = vc_triangulation
+#             for ind,c in enumerate(singular_two_cones):
+#                 blowup_index = int(blowup_labels[ind])
+#                 links = vc_triangulation_orbifold.link(c)
+#                 old_cones = [tuple(sorted(list(l)+list(c))) for l in links]
+#                 new_cones = [tuple(sorted(list(l)+[c[0],blowup_index])) for l in links]+[tuple(sorted(list(l)+[c[1],blowup_index])) for l in links]
+#                 for cc in old_cones:
+#                     all_cones.remove(cc)
+#                 for cc in new_cones:
+#                     all_cones.append(cc)
+#                 vc_triangulation_orbifold = Fan(vc_orbifold,cones=all_cones)
 
-        else:
-            vc_triangulation_orbifold = Fan(vc_orbifold,cones=all_cones)
-            blowup_labels = []
+#         else:
+#             vc_triangulation_orbifold = Fan(vc_orbifold,cones=all_cones)
+#             blowup_labels = []
         
-        return (vc_triangulation_orbifold,rescalings,blowup_labels)
-    if is_fan:
-        vc_triangulation_orbifold = Fan(vc_orbifold,cones=all_cones)
-        return (vc_triangulation_orbifold,rescalings,None)
-    else:
-        return (vc_orbifold,rescalings,None)
+#         return (vc_triangulation_orbifold,rescalings,blowup_labels)
+#     if is_fan:
+#         vc_triangulation_orbifold = Fan(vc_orbifold,cones=all_cones)
+#         return (vc_triangulation_orbifold,rescalings,None)
+#     else:
+#         return (vc_orbifold,rescalings,None)
 
-def toric_orbifold_NEW(pts_CY_ambient,q,denominator=2):
+def toric_orbifold(pts_CY_ambient,q,denominator=2):
 
     """
     **Description:**
@@ -604,67 +604,14 @@ def toric_orbifold_NEW(pts_CY_ambient,q,denominator=2):
     **Returns:**
     tuple of (toric variety, array of rescalings of edges of toric fan)
     """
-    # match vc_triangulation:
-    #     case Fan():
-    #         is_fan=True
-    #         all_cones=list(vc_triangulation.cones())
-    #         pts=vc_triangulation.vectors()
-    #     case VectorConfiguration():
-    #         resolve_A1_singularities=False
-    #         is_fan=False
-    #         pts=vc_triangulation.vectors()
-    #     case np.ndarray():
-    #         is_fan=False
-    #         resolve_A1_singularities=False
-    #         pts=vc_triangulation
-    #     case _:
-    #         raise(ValueError,"Input must be a VectorConfiguration or a fan")
             
     Lambda = lattice_refinement(q,denominator)
     orbifold_points = pts_CY_ambient@(Lambda.T)
     rescalings = np.array([math.gcd(*list(i)) for i in orbifold_points])
     orbifold_points = np.rint((orbifold_points.T/rescalings).T).astype(int)
     return (orbifold_points,rescalings)
-    # orbifold_blowups=[]
-    # if resolve_A1_singularities:
-    #     vc_orbifold = VectorConfiguration(orbifold_points)
-    #     singular_two_cones = Z2_fixed_locus(vc_triangulation,q,cone_dimension=2,denominator=denominator)
 
-    #     if len(singular_two_cones)>0:
-    #         for c in singular_two_cones:
-    #             vec=np.sum(orbifold_points[np.array(c)-1],axis=0)
-    #             vec_add=np.rint(vec/np.gcd.reduce(vec)).astype(int)
-    #             orbifold_blowups.append(vec_add.tolist())
-    #         orbifold_blowups=np.array(orbifold_blowups)
-    #         orbifold_points=np.vstack([orbifold_points,orbifold_blowups])
-    #         vc_orbifold=VectorConfiguration(orbifold_points)
-    #         rescalings=np.concatenate((rescalings,2*np.ones(len(orbifold_blowups),dtype=int)))
-    
-    #         blowup_labels = np.arange(len(orbifold_points)-len(orbifold_blowups),len(orbifold_points))+1
-    #         vc_triangulation_orbifold = vc_triangulation
-    #         for ind,c in enumerate(singular_two_cones):
-    #             blowup_index = int(blowup_labels[ind])
-    #             links = vc_triangulation_orbifold.link(c)
-    #             old_cones = [tuple(sorted(list(l)+list(c))) for l in links]
-    #             new_cones = [tuple(sorted(list(l)+[c[0],blowup_index])) for l in links]+[tuple(sorted(list(l)+[c[1],blowup_index])) for l in links]
-    #             for cc in old_cones:
-    #                 all_cones.remove(cc)
-    #             for cc in new_cones:
-    #                 all_cones.append(cc)
-    #             vc_triangulation_orbifold = Fan(vc_orbifold,cones=all_cones)
-
-    #     else:
-    #         vc_triangulation_orbifold = Fan(vc_orbifold,cones=all_cones)
-    #         blowup_labels = []
-        
-    #     return (vc_triangulation_orbifold,rescalings,blowup_labels)
-    # if is_fan:
-    #     vc_orbifold = VectorConfiguration(orbifold_points)
-    #     vc_triangulation_orbifold = Fan(vc_orbifold,cones=all_cones)
-    #     return (vc_triangulation_orbifold,rescalings,None)
-    # else:
-
-def O3O7_line_bundle_NEW(pts_CY_ambient,q,rescalings):
+def O3O7_line_bundle(pts_CY_ambient,q,rescalings):
 
     """
     **Description:**
@@ -690,47 +637,47 @@ def O3O7_line_bundle_NEW(pts_CY_ambient,q,rescalings):
     return line_bundle_weights_FtheoryBase
 
 
-def O3O7_line_bundle(vc_triangulation,q,rescalings,resolve_A1_singularities=False):
+# def O3O7_line_bundle_OLD(vc_triangulation,q,rescalings,resolve_A1_singularities=False):
 
-    """
-    **Description:**
-    Computes the line bundle weigths associated with O3/O7 type hypersurface
+#     """
+#     **Description:**
+#     Computes the line bundle weigths associated with O3/O7 type hypersurface
 
-    **Arguments:**
-    - `vc_triangulation` *(triangulation of vector configuration)*: a simplicial toric variety
-    - `q` *(list of integers or numpy array)*: scaled up co-prime lattice refinement vector
-    - `rescalings` *(list of integers or numpy array)*: rescalings of divisor classes in toric orbifold
+#     **Arguments:**
+#     - `vc_triangulation` *(triangulation of vector configuration)*: a simplicial toric variety
+#     - `q` *(list of integers or numpy array)*: scaled up co-prime lattice refinement vector
+#     - `rescalings` *(list of integers or numpy array)*: rescalings of divisor classes in toric orbifold
 
-    **Returns:**
-    numpy array of line bundle weights
-    """
-    match vc_triangulation:
-        case VectorConfiguration():
-            resolve_A1_singularities=False
-            pts=vc_triangulation.vectors()
-        case np.ndarray():
-            resolve_A1_singularities=False
-            pts=vc_triangulation
-        case Fan():
-            pts=vc_triangulation.vectors()
-        case _:
-            raise(ValueError,"Input must be a VectorConfiguration or a fan or points")
+#     **Returns:**
+#     numpy array of line bundle weights
+#     """
+#     match vc_triangulation:
+#         case VectorConfiguration():
+#             resolve_A1_singularities=False
+#             pts=vc_triangulation.vectors()
+#         case np.ndarray():
+#             resolve_A1_singularities=False
+#             pts=vc_triangulation
+#         case Fan():
+#             pts=vc_triangulation.vectors()
+#         case _:
+#             raise(ValueError,"Input must be a VectorConfiguration or a fan or points")
             
-    CY3_equation_newton_polytope = Newton_Polytope(pts,[1]*len(pts))
-    projected_in_monomial_indices = np.where(np.mod(CY3_equation_newton_polytope.points()@q,2)==1)[0]
-    if len(projected_in_monomial_indices)==0:
-        return None
-    arbitrary_monomial_point = CY3_equation_newton_polytope.points()[projected_in_monomial_indices[0]]
-    line_bundle_weights_CYhypersurface = pts@arbitrary_monomial_point+1
-    if resolve_A1_singularities:
-        fixed_locus = Z2_fixed_locus(vc_triangulation,q,cone_dimension=2,denominator=2)
-        blow_up_weights = np.rint(np.array([sum(line_bundle_weights_CYhypersurface[np.array(c)-1])-1 for c in fixed_locus])).astype(int)
-        line_bundle_weights_after_blow_up = np.concatenate([line_bundle_weights_CYhypersurface,blow_up_weights])
-        line_bundle_weights_FtheoryBase = np.rint(line_bundle_weights_after_blow_up/rescalings).astype(int)
-    else:
-        line_bundle_weights_FtheoryBase = np.rint(line_bundle_weights_CYhypersurface/rescalings).astype(int)
+#     CY3_equation_newton_polytope = Newton_Polytope(pts,[1]*len(pts))
+#     projected_in_monomial_indices = np.where(np.mod(CY3_equation_newton_polytope.points()@q,2)==1)[0]
+#     if len(projected_in_monomial_indices)==0:
+#         return None
+#     arbitrary_monomial_point = CY3_equation_newton_polytope.points()[projected_in_monomial_indices[0]]
+#     line_bundle_weights_CYhypersurface = pts@arbitrary_monomial_point+1
+#     if resolve_A1_singularities:
+#         fixed_locus = Z2_fixed_locus(vc_triangulation,q,cone_dimension=2,denominator=2)
+#         blow_up_weights = np.rint(np.array([sum(line_bundle_weights_CYhypersurface[np.array(c)-1])-1 for c in fixed_locus])).astype(int)
+#         line_bundle_weights_after_blow_up = np.concatenate([line_bundle_weights_CYhypersurface,blow_up_weights])
+#         line_bundle_weights_FtheoryBase = np.rint(line_bundle_weights_after_blow_up/rescalings).astype(int)
+#     else:
+#         line_bundle_weights_FtheoryBase = np.rint(line_bundle_weights_CYhypersurface/rescalings).astype(int)
 
-    return line_bundle_weights_FtheoryBase
+#     return line_bundle_weights_FtheoryBase
 
 
 def Z2_fixed_locus(vc_triangulation,q,cone_dimension=None,denominator=2):
@@ -1370,7 +1317,7 @@ def base_locus(sections,cones=None,dim=4):
 #     return (normal_fan_vc.triangulate(cells=cones),weights,cones)
 
 
-def normal_fan_NEW(polytopes,inequalities=None,maximal_refinement=False,triangulate_refinement=False,return_unrefined_fan=False):
+def normal_fan(polytopes,inequalities=None,maximal_refinement=False,triangulate_refinement=False,return_unrefined_fan=False):
 
     """
     **Description:**
@@ -1401,17 +1348,12 @@ def normal_fan_NEW(polytopes,inequalities=None,maximal_refinement=False,triangul
     cones = [[int(np.where(np.all(normal_fan_edges-x==0,axis=1))[0][0])+1 for x in np.delete(s.T,-1,0).T] for s in hyperplane_saturations]
     n_fan = Fan(vc=normal_fan_vc,cones=cones)
 
-
     if type(polytopes)==type([]):
         vertices_to_vertices_map = [vertex_split[np.where([i in c for c in cones])[0][0]] for i in range(1,len(normal_fan_edges)+1)]
         weights = np.array([-np.array([polytopes[j].vertices()[x] for j,x in enumerate(pointers)])@(normal_fan_edges[i]) for i,pointers in enumerate(vertices_to_vertices_map)])
 
-    
-
     if not maximal_refinement:
         return (normal_fan_vc.triangulate(cells=cones),weights,cones)
-
-    
 
     if type(inequalities)==type(None):
         raise Exception('Inequalities must be given to construct maximal refinement')
@@ -1428,16 +1370,6 @@ def normal_fan_NEW(polytopes,inequalities=None,maximal_refinement=False,triangul
         if return_unrefined_fan:
             return (None,None,None)
         else:
-            return (None,None)
-    problem=False
-    for vec_index in range(len(n_fan.vectors())):
-        for c_index in range(len(cones)):
-            if vec_index+1 in cones[c_index]:
-                break
-        tot=0
-        for i in range(len(polytopes)):
-            tot+=inequalities[i]*n_vectors[vec_index]@(polytopes[i].vertices()[vertex_split[c_index][i]])
-        if tot>=0:
             return (None,None)
 
     maximal_blow_ups = [h_polytope.HPolytope(np.vstack([[np.concatenate([np.delete(inequalities,-1,0)@np.array([polytopes[j].vertices()[x] 
@@ -1459,8 +1391,6 @@ def normal_fan_NEW(polytopes,inequalities=None,maximal_refinement=False,triangul
     all_vectors = np.vstack([n_fan.vectors(),blow_up_vectors])
     all_weights = np.vstack([weights,blow_up_weights])
 
-    # vc_total = VectorConfiguration(all_vectors)
-
     if not triangulate_refinement:
         if return_unrefined_fan:
             return (all_vectors,all_weights,n_fan)
@@ -1469,11 +1399,11 @@ def normal_fan_NEW(polytopes,inequalities=None,maximal_refinement=False,triangul
 
         
     if return_unrefined_fan:
-        return (refine_fan_2(make_simplicial(n_fan),all_vectors),all_weights,n_fan)
+        return (refine_fan(make_simplicial(n_fan),all_vectors),all_weights,n_fan)
     else:
-        return (refine_fan_2(make_simplicial(n_fan),all_vectors),all_weights)
+        return (refine_fan(make_simplicial(n_fan),all_vectors),all_weights)
 
-def normal_fan(polytopes,inequalities=None,maximal_refinement=False,triangulate_refinement=False,return_unrefined_fan=False):
+def normal_fan_OLD(polytopes,inequalities=None,maximal_refinement=False,triangulate_refinement=False,return_unrefined_fan=False):
 
     """
     **Description:**
@@ -1573,9 +1503,9 @@ def normal_fan(polytopes,inequalities=None,maximal_refinement=False,triangulate_
 
         
     if return_unrefined_fan:
-        return (refine_fan_2(make_simplicial(n_fan),all_vectors),all_weights,n_fan)
+        return (refine_fan(make_simplicial(n_fan),all_vectors),all_weights,n_fan)
     else:
-        return (refine_fan_2(make_simplicial(n_fan),all_vectors),all_weights)
+        return (refine_fan(make_simplicial(n_fan),all_vectors),all_weights)
 
 
 def nested_sum(lists, depth=0, acc=0):
@@ -1842,7 +1772,7 @@ def make_simplicial(fan):
                 new_cones.add(tuple(carr[np.array(co)-1]))
     return Fan(vc=fan.vc,cones=new_cones)
 
-def refine_fan_2(fan,blowups_or_all_vectors=None):
+def refine_fan(fan,blowups_or_all_vectors=None):
     if blowups_or_all_vectors is not None:
         blowups=row_difference(blowups_or_all_vectors,fan.vc.vectors())
         all_vectors=np.concatenate((fan.vc.vectors(),blowups),axis=0)
@@ -1875,37 +1805,6 @@ def refine_fan_2(fan,blowups_or_all_vectors=None):
             new_fan=Fan(vc=new_fan.vc,cones=all_cones)
         return new_fan
 
-# def refine_fan(fan,blowups_or_all_vectors):
-#     blowups=row_difference(blowups_or_all_vectors,fan.vectors())
-#     all_vectors=np.concatenate((fan.vectors(),blowups),axis=0)
-#     vc_all=VectorConfiguration(all_vectors)
-#     new_fan=Fan(vc_all,cones=fan.cones())
-#     to_be_blownup = set(range(len(fan.vectors())+1,len(all_vectors)+1))
-#     if fan.dim==len(blowups_or_all_vectors[0]):
-#         for label in to_be_blownup:
-#             all_cones=set(new_fan.cones())
-#             link_base=tuple(find_cone(vc_all.vectors(label),all_cones,all_vectors))
-#             link_base_len=len(link_base)
-#             for c in new_fan.link(link_base):
-#                 all_cones.discard(tuple(sorted(link_base + c)))
-                
-#                 for comb in combinations(link_base, link_base_len - 1):
-#                     all_cones.add(tuple(sorted(comb + c + (label,))))
-                    
-#             new_fan=Fan(vc=vc_all,cones=all_cones)
-#         return new_fan
-#     else:
-#         for label in to_be_blownup:
-#             all_cones=set(new_fan.cones())
-#             link_base=tuple(find_cone_general(vc_all.vectors(label),all_cones,all_vectors))
-#             link_base_len=len(link_base)
-#             for c in new_fan.link(link_base):
-#                 all_cones.discard(tuple(sorted(link_base + c)))
-#                 for comb in combinations(link_base, link_base_len - 1):
-#                     all_cones.add(tuple(sorted(comb + c + (label,))))
-#             new_fan=Fan(vc=vc_all,cones=all_cones)
-#         return new_fan
-
 def find_cone_general(new_ray, current_cones, all_vectors):
     """
     Finds the minimal set of 1-based ray indices (the carrier face) whose 
@@ -1928,6 +1827,9 @@ def find_cone_general(new_ray, current_cones, all_vectors):
     return None
 
 def array_to_latex(arr):
+    """
+    Converts a NumPy array to a LaTeX matrix format.
+    """
     if len(arr.shape) > 2:
         raise ValueError("Only 2D matrices are supported.")
     
@@ -1938,6 +1840,9 @@ def array_to_latex(arr):
     return "\\begin{pmatrix}\n" + "\n".join(lines) + "\n\\end{pmatrix}"
 
 def lattice_index(mat):
+    """
+    Computes the lattice index of the sublattice generated by the rows of mat.
+    """
     A=Matrix(mat,domain=ZZ)
     snf = smith_normal_form(A)
     
@@ -2002,6 +1907,9 @@ def find_cone(new_ray, current_cones, all_vectors, tol=1e-10):
     return None
 
 def primitive_rows(A):
+    """
+    Simplifies the rows of integer matrix A by dividing each row by the GCD of its entries.
+    """
     A = np.asarray(A, dtype=int)
 
     row_gcds = np.gcd.reduce(np.abs(A), axis=1, keepdims=True)
