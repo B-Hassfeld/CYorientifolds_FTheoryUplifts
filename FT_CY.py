@@ -214,8 +214,8 @@ class CY_orientifold():
                 NHClb=np.zeros(len(self.line_bundle()))
                 NHC_inds=self.NHC(as_labels=True)-1
                 NHClb[NHC_inds]=1
-                lb=self.line_bundle()-np.rint((self._multiplier/2)*NHClb).astype(int)
-                self.__yields_nef_decomposition = UF.is_Cartier(self.orbifold_toric_fan(),lb)[0] and UF.is_nef(self.orbifold_toric_fan(),lb)
+                lb=self._multiplier*(1-self.line_bundle())-np.rint((self._multiplier/2)*NHClb).astype(int)
+                self.__yields_nef_decomposition = UF.is_Cartier(self.orbifold_toric_fan(),lb)[0] and UF.is_nef(self.orbifold_toric_fan(),lb) and self.is_Cartier(self.orbifold_toric_fan(),self.line_bundle())[0] and UF.is_nef(self.orbifold_toric_fan(),self.line_bundle())
             else:
                 self.__yields_nef_decomposition = UF.contains_rows(self.vectors_orbifold(),self.normal_fan().vectors())
         return self.__yields_nef_decomposition
