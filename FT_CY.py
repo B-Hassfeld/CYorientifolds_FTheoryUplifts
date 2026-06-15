@@ -628,90 +628,97 @@ class F_Theory_Uplift():
         """Computes the curve homology intersections in the M basis."""
         if not self.is_nef_partition():
             raise ValueError("Uplift is not a nef-partition")
+        return(UF.divisor_intersections(fan=self.M_conv_toric_fan(),divisors=[self.line_bundle_base_M(),self.line_bundle_weierstrass_M()],intersection_dict=self.intersection_numbers_M_conv(),basis_set=set(self.basis_homology_M()),as_LLL=as_LLL))
+    # def divisor_intersection_M(self, as_LLL=True):
+    #     """Computes the curve homology intersections in the M basis."""
+    #     if not self.is_nef_partition():
+    #         raise ValueError("Uplift is not a nef-partition")
             
-        fan = self.M_conv_toric_fan()
-        intersection_dict = self.intersection_numbers_M_conv()
-        three_simplices = UF.get_lower_dimensional_cones(fan.cones(), fan.dim - 3)
-        basis = self.basis_homology_M()
+    #     fan = self.M_conv_toric_fan()
+    #     intersection_dict = self.intersection_numbers_M_conv()
+    #     three_simplices = UF.get_lower_dimensional_cones(fan.cones(), fan.dim - 3)
+    #     basis = self.basis_homology_M()
         
-        LBB_set = set(np.where(self.line_bundle_base_M() == 1)[0] + 1)
-        LBW_set = set(np.where(self.line_bundle_weierstrass_M() == 1)[0] + 1)
-        basis_set = set(basis)
+    #     LBB_set = set(np.where(self.line_bundle_base_M() == 1)[0] + 1)
+    #     LBW_set = set(np.where(self.line_bundle_weierstrass_M() == 1)[0] + 1)
+    #     basis_set = set(basis)
         
-        curves_homology_in_basis = np.zeros((len(three_simplices), len(basis_set)), dtype=int)
+    #     curves_homology_in_basis = np.zeros((len(three_simplices), len(basis_set)), dtype=int)
         
-        basis_idx_map = {b: idx for idx, b in enumerate(basis)}
+    #     basis_idx_map = {b: idx for idx, b in enumerate(basis)}
 
-        for s_idx, s in enumerate(three_simplices):
-            star_s=fan.star(s)
-            link_rays = {item for sub_tuple in star_s for item in sub_tuple}
+    #     for s_idx, s in enumerate(three_simplices):
+    #         star_s=fan.star(s)
+    #         link_rays = {item for sub_tuple in star_s for item in sub_tuple}
             
-            valid_x = LBW_set.intersection(link_rays)
-            valid_y = LBB_set.intersection(link_rays)
-            valid_i = basis_set.intersection(link_rays)
+    #         valid_x = LBW_set.intersection(link_rays)
+    #         valid_y = LBB_set.intersection(link_rays)
+    #         valid_i = basis_set.intersection(link_rays)
             
-            if not (valid_x and valid_y and valid_i):
-                continue
+    #         if not (valid_x and valid_y and valid_i):
+    #             continue
                 
-            for i in valid_i:
-                i_idx = basis_idx_map.get(i)
-                total_intersection = 0
+    #         for i in valid_i:
+    #             i_idx = basis_idx_map.get(i)
+    #             total_intersection = 0
                 
-                for x in valid_x:
-                    for y in valid_y:
-                        if x == y or x == i or y == i or x in s or y in s or i in s:
-                            continue
-                        key = tuple(sorted(s + (x, y, i)))
-                        total_intersection += intersection_dict.get(key, 0)
+    #             for x in valid_x:
+    #                 for y in valid_y:
+    #                     if x == y or x == i or y == i or x in s or y in s or i in s:
+    #                         continue
+    #                     key = tuple(sorted(s + (x, y, i)))
+    #                     total_intersection += intersection_dict.get(key, 0)
                 
-                curves_homology_in_basis[s_idx, i_idx] = total_intersection
+    #             curves_homology_in_basis[s_idx, i_idx] = total_intersection
 
-        if as_LLL:
-            return (basis, UF.LLL_wrapper(curves_homology_in_basis))
-        return (basis, curves_homology_in_basis)
- 
+    #     if as_LLL:
+    #         return (basis, UF.LLL_wrapper(curves_homology_in_basis))
+    #     return (basis, curves_homology_in_basis)
     def divisor_intersection_N(self, as_LLL=True):
         """Computes the curve homology intersections in the N basis."""
+        return(UF.divisor_intersections(fan=self.smooth_uplift_ambient_toric_fan(),divisors=[self.line_bundle_base_N(),self.line_bundle_weierstrass_N()],intersection_dict=self.intersection_numbers_smooth_uplift_ambient(),basis_set=set(self.basis_homology_N()),as_LLL=as_LLL))
+    # def divisor_intersection_N(self, as_LLL=True):
+    #     """Computes the curve homology intersections in the N basis."""
             
-        fan = self.smooth_uplift_ambient_toric_fan()
-        intersection_dict = self.intersection_numbers_smooth_uplift_ambient()
-        three_simplices = UF.get_lower_dimensional_cones(fan.cones(), fan.dim - 3)
-        basis = self.basis_homology_N()
+    #     fan = self.smooth_uplift_ambient_toric_fan()
+    #     intersection_dict = self.intersection_numbers_smooth_uplift_ambient()
+    #     three_simplices = UF.get_lower_dimensional_cones(fan.cones(), fan.dim - 3)
+    #     basis = self.basis_homology_N()
         
-        LBB_set = set(np.where(self.line_bundle_base_N() == 1)[0] + 1)
-        LBW_set = set(np.where(self.line_bundle_weierstrass_N() == 1)[0] + 1)
-        basis_set = set(basis)
+    #     LBB_set = set(np.where(self.line_bundle_base_N() == 1)[0] + 1)
+    #     LBW_set = set(np.where(self.line_bundle_weierstrass_N() == 1)[0] + 1)
+    #     basis_set = set(basis)
         
-        curves_homology_in_basis = np.zeros((len(three_simplices), len(basis_set)), dtype=int)
-        basis_idx_map = {b: idx for idx, b in enumerate(basis)}
+    #     curves_homology_in_basis = np.zeros((len(three_simplices), len(basis_set)), dtype=int)
+    #     basis_idx_map = {b: idx for idx, b in enumerate(basis)}
 
-        for s_idx, s in enumerate(three_simplices):
-            star_s=fan.star(s)
-            link_rays = {item for sub_tuple in star_s for item in sub_tuple}
+    #     for s_idx, s in enumerate(three_simplices):
+    #         star_s=fan.star(s)
+    #         link_rays = {item for sub_tuple in star_s for item in sub_tuple}
             
-            valid_x = LBW_set.intersection(link_rays)
-            valid_y = LBB_set.intersection(link_rays)
-            valid_i = basis_set.intersection(link_rays)
+    #         valid_x = LBW_set.intersection(link_rays)
+    #         valid_y = LBB_set.intersection(link_rays)
+    #         valid_i = basis_set.intersection(link_rays)
             
-            if not (valid_x and valid_y and valid_i):
-                continue
+    #         if not (valid_x and valid_y and valid_i):
+    #             continue
                 
-            for i in valid_i:
-                i_idx = basis_idx_map.get(i)
-                total_intersection = 0
+    #         for i in valid_i:
+    #             i_idx = basis_idx_map.get(i)
+    #             total_intersection = 0
                 
-                for x in valid_x:
-                    for y in valid_y:
-                        if x == y or x == i or y == i or x in s or y in s or i in s:
-                            continue
-                        key = tuple(sorted(s + (x, y, i)))
-                        total_intersection += intersection_dict.get(key, 0)
+    #             for x in valid_x:
+    #                 for y in valid_y:
+    #                     if x == y or x == i or y == i or x in s or y in s or i in s:
+    #                         continue
+    #                     key = tuple(sorted(s + (x, y, i)))
+    #                     total_intersection += intersection_dict.get(key, 0)
                 
-                curves_homology_in_basis[s_idx, i_idx] = total_intersection
+    #             curves_homology_in_basis[s_idx, i_idx] = total_intersection
 
-        if as_LLL:
-            return (basis, UF.LLL_wrapper(curves_homology_in_basis))
-        return (basis, curves_homology_in_basis)  
+    #     if as_LLL:
+    #         return (basis, UF.LLL_wrapper(curves_homology_in_basis))
+    #     return (basis, curves_homology_in_basis)  
     
     def NHC(self, as_labels=False):
         """Returns the Non-Higgsable Clusters (NHC) in the base space."""

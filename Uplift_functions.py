@@ -1917,3 +1917,44 @@ def primitive_rows(A):
     row_gcds[row_gcds == 0] = 1   # protects all-zero rows
 
     return A // row_gcds
+
+
+def divisor_intersections(fan, intersection_dict,divisors, basis_set,as_LLL=True):
+            
+    # fan = self.M_conv_toric_fan()
+    # intersection_dict = self.intersection_numbers_M_conv()
+    codim_cicy=len(divisors)
+    simplices = get_lower_dimensional_cones(fan.cones(), fan.dim - codim_cicy-1)
+    # basis = self.basis_homology_M()
+    divisor_nonvanishing_sets = []
+    for div in divisors:
+        divisor_nonvanishing_sets.append(set(np.where(div != 0)[0] + 1))
+    
+    curves_homology_in_basis = np.zeros((len(simplices), len(basis_set)), dtype=int)
+    
+    basis_idx_map = {b: idx for idx, b in enumerate(basis_set)}
+
+    for s_idx, s in enumerate(simplices):
+        star_s=fan.star(s)
+        link_rays = {item for sub_tuple in star_s for item in sub_tuple}
+        valid_intersections = []
+        for div_set in divisor_nonvanishing_sets:
+            valid_intersections.append(div_set.intersection(link_rays))
+        valid_i = basis_set.intersection(link_rays)
+        
+        if not (all(valid_intersections) and valid_i):
+            continue
+        for i in valid_i:
+            i_idx = basis_idx_map.get(i)
+            total_intersection = 0
+            
+            for ts in product(*valid_intersections):
+                key = tuple(sorted(s + ts+ (i,)))
+                coefficient = np.prod([divisors[a][ray - 1]for a, ray in enumerate(ts)])
+                total_intersection += coefficient * intersection_dict.get(key, 0)
+            
+            curves_homology_in_basis[s_idx, i_idx] = total_intersection
+
+    if as_LLL:
+        return LLL_wrapper(curves_homology_in_basis)
+    return curves_homology_in_basis
