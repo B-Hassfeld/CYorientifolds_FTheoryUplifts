@@ -320,30 +320,6 @@ class F_Theory_Uplift():
             self.__LBB_N = LBB_N
             self.__LBW_N = self.vectors_smooth_uplift_ambient()@sta[1]+LBW_N
         self.__is_partition = is_part[0]
-
-    # def __set_divisor_representations(self):
-    #     """Sets up the Base and Weierstrass line bundle arrays and verifies the partition status."""
-    #     n_sing = len(self.vectors_orbifold()) + 3
-    #     n_smooth = len(self.vectors_smooth_uplift_ambient())
-    #     LBB_N = np.zeros(n_smooth, dtype=int)
-    #     LBW_N = np.zeros(n_smooth, dtype=int)
-        
-    #     LBB_N[:n_sing-3] = self.line_bundle_orbifold()
-    #     LBW_N[n_sing-3] = 3
-        
-    #     NHC = self.NHC(as_labels=True) - 1
-    #     if len(NHC) > 0:
-    #         cont = np.where(self.line_bundle_orbifold() != 0)[0]
-    #         nhc_cont = np.where(np.isin(NHC, cont))[0]
-    #         for n in nhc_cont:
-    #             contribution_n = self.line_bundle_orbifold()[NHC[n]]
-    #             LBB_N[2*n + n_sing] = 1 * contribution_n
-    #             LBB_N[2*n + 1 + n_sing] = 2 * contribution_n
-                
-    #     is_partition = UF.is_partition(self.vectors_smooth_uplift_ambient(), LBB_N, LBW_N)
-    #     self.__LBB_N = LBB_N + self.vectors_smooth_uplift_ambient() @ is_partition[2]
-    #     self.__LBW_N = LBW_N + self.vectors_smooth_uplift_ambient() @ is_partition[3]
-    #     self.__is_partition = is_partition[0]
         
     def orientifold(self):
         """Returns the underlying CY_orientifold instance."""
@@ -629,96 +605,10 @@ class F_Theory_Uplift():
         if not self.is_nef_partition():
             raise ValueError("Uplift is not a nef-partition")
         return(UF.divisor_intersections(fan=self.M_conv_toric_fan(),divisors=[self.line_bundle_base_M(),self.line_bundle_weierstrass_M()],intersection_dict=self.intersection_numbers_M_conv(),basis_set=set(self.basis_homology_M()),as_LLL=as_LLL))
-    # def divisor_intersection_M(self, as_LLL=True):
-    #     """Computes the curve homology intersections in the M basis."""
-    #     if not self.is_nef_partition():
-    #         raise ValueError("Uplift is not a nef-partition")
-            
-    #     fan = self.M_conv_toric_fan()
-    #     intersection_dict = self.intersection_numbers_M_conv()
-    #     three_simplices = UF.get_lower_dimensional_cones(fan.cones(), fan.dim - 3)
-    #     basis = self.basis_homology_M()
-        
-    #     LBB_set = set(np.where(self.line_bundle_base_M() == 1)[0] + 1)
-    #     LBW_set = set(np.where(self.line_bundle_weierstrass_M() == 1)[0] + 1)
-    #     basis_set = set(basis)
-        
-    #     curves_homology_in_basis = np.zeros((len(three_simplices), len(basis_set)), dtype=int)
-        
-    #     basis_idx_map = {b: idx for idx, b in enumerate(basis)}
 
-    #     for s_idx, s in enumerate(three_simplices):
-    #         star_s=fan.star(s)
-    #         link_rays = {item for sub_tuple in star_s for item in sub_tuple}
-            
-    #         valid_x = LBW_set.intersection(link_rays)
-    #         valid_y = LBB_set.intersection(link_rays)
-    #         valid_i = basis_set.intersection(link_rays)
-            
-    #         if not (valid_x and valid_y and valid_i):
-    #             continue
-                
-    #         for i in valid_i:
-    #             i_idx = basis_idx_map.get(i)
-    #             total_intersection = 0
-                
-    #             for x in valid_x:
-    #                 for y in valid_y:
-    #                     if x == y or x == i or y == i or x in s or y in s or i in s:
-    #                         continue
-    #                     key = tuple(sorted(s + (x, y, i)))
-    #                     total_intersection += intersection_dict.get(key, 0)
-                
-    #             curves_homology_in_basis[s_idx, i_idx] = total_intersection
-
-    #     if as_LLL:
-    #         return (basis, UF.LLL_wrapper(curves_homology_in_basis))
-    #     return (basis, curves_homology_in_basis)
     def divisor_intersection_N(self, as_LLL=True):
         """Computes the curve homology intersections in the N basis."""
         return(UF.divisor_intersections(fan=self.smooth_uplift_ambient_toric_fan(),divisors=[self.line_bundle_base_N(),self.line_bundle_weierstrass_N()],intersection_dict=self.intersection_numbers_smooth_uplift_ambient(),basis_set=set(self.basis_homology_N()),as_LLL=as_LLL))
-    # def divisor_intersection_N(self, as_LLL=True):
-    #     """Computes the curve homology intersections in the N basis."""
-            
-    #     fan = self.smooth_uplift_ambient_toric_fan()
-    #     intersection_dict = self.intersection_numbers_smooth_uplift_ambient()
-    #     three_simplices = UF.get_lower_dimensional_cones(fan.cones(), fan.dim - 3)
-    #     basis = self.basis_homology_N()
-        
-    #     LBB_set = set(np.where(self.line_bundle_base_N() == 1)[0] + 1)
-    #     LBW_set = set(np.where(self.line_bundle_weierstrass_N() == 1)[0] + 1)
-    #     basis_set = set(basis)
-        
-    #     curves_homology_in_basis = np.zeros((len(three_simplices), len(basis_set)), dtype=int)
-    #     basis_idx_map = {b: idx for idx, b in enumerate(basis)}
-
-    #     for s_idx, s in enumerate(three_simplices):
-    #         star_s=fan.star(s)
-    #         link_rays = {item for sub_tuple in star_s for item in sub_tuple}
-            
-    #         valid_x = LBW_set.intersection(link_rays)
-    #         valid_y = LBB_set.intersection(link_rays)
-    #         valid_i = basis_set.intersection(link_rays)
-            
-    #         if not (valid_x and valid_y and valid_i):
-    #             continue
-                
-    #         for i in valid_i:
-    #             i_idx = basis_idx_map.get(i)
-    #             total_intersection = 0
-                
-    #             for x in valid_x:
-    #                 for y in valid_y:
-    #                     if x == y or x == i or y == i or x in s or y in s or i in s:
-    #                         continue
-    #                     key = tuple(sorted(s + (x, y, i)))
-    #                     total_intersection += intersection_dict.get(key, 0)
-                
-    #             curves_homology_in_basis[s_idx, i_idx] = total_intersection
-
-    #     if as_LLL:
-    #         return (basis, UF.LLL_wrapper(curves_homology_in_basis))
-    #     return (basis, curves_homology_in_basis)  
     
     def NHC(self, as_labels=False):
         """Returns the Non-Higgsable Clusters (NHC) in the base space."""
