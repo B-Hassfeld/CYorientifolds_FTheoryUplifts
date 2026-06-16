@@ -208,14 +208,17 @@ class CY_orientifold():
         return self.__yields_nef_decomposition
 
     def polytope(self):
+        """Returns the polytope underlying the Calabi-Yau manifold, if one was defined."""
         return self.__p
 
     def intersection_numbers_orbifold(self):
+        """Returns the intersection numbers of the orbifold."""
         if self.__intersection_numbers_orbifold is None:
             self.__intersection_numbers_orbifold = self.orbifold_toric_fan().intersection_numbers()
         return self.__intersection_numbers_orbifold
 
     def NHC(self,as_labels=False):
+        """Returns the non-Higgsable clusters of the orbifold."""
         if self.__NHC_labels is None:
             sections_NP2 = UF.sections(self.vectors_orbifold(), 2 * (1 - self.line_bundle()))
             if len(sections_NP2) > 0:
@@ -711,6 +714,7 @@ class F_Theory_Uplift():
         else:
             return ((),())
     def is_nef_decomposition(self):
+        """Returns whether the F-theory uplift defines a nef decomposition."""
         if self.__is_nef_decomposition is None:
             if self.orientifold().ambient_triangulation:
                 self.__is_nef_decomposition = np.all([UF.is_Cartier(self.smooth_uplift_ambient_toric_fan(),self.line_bundle_base_N())[0],UF.is_Cartier(self.smooth_uplift_ambient_toric_fan(),self.line_bundle_weierstrass_N())[0],UF.is_nef(self.smooth_uplift_ambient_toric_fan(),self.line_bundle_base_N()),UF.is_nef(self.smooth_uplift_ambient_toric_fan(),self.line_bundle_weierstrass_N())])
@@ -719,6 +723,7 @@ class F_Theory_Uplift():
         return self.__is_nef_decomposition
             
     def intersection_numbers_orbifold(self):
+        """Returns the intersection numbers of the orbifold."""
         return self.orientifold().intersection_numbers_orbifold()
 
 def fetch_orientifolds(only_regular: bool=True, only_nef_decomposition: bool=False,h11: int = None,h12: int = None,h13: int = None,
@@ -731,6 +736,7 @@ def fetch_orientifolds(only_regular: bool=True, only_nef_decomposition: bool=Fal
     dualize: bool = False,
     favorable: bool = None,
     verbosity: int = 0):
+    """Returns an iterator over CY_orientifold objects matching the given criteria."""
     if only_nef_decomposition:
         for p in fetch_polytopes(h11,h12,h13,h21,h22,h31,chi,lattice,dim,n_points,n_vertices,n_dual_points,n_facets,limit,samples,sample_seed,timeout,as_list,backend,deterministic_glsm_basis,dualize,favorable,verbosity):
             for xi in UF.inequivalent_Z2_actions(p.automorphisms(action="left")):
@@ -757,6 +763,7 @@ def fetch_F_Theory_uplifts(only_regular: bool = True, only_nef_partition:bool=Fa
     dualize: bool = False,
     favorable: bool = None,
     verbosity: int = 0):
+    """Returns an iterator over F_Theory_Uplift objects matching the given criteria."""
     if only_nef_partition:
         for O in fetch_orientifolds(only_nef_decomposition=True,h11=h11,h12=h12,h13=h13,h21=h21,h22=h22,h31=h31,chi=chi,lattice=lattice,dim=dim,n_points=n_points,n_vertices=n_vertices,n_dual_points=n_dual_points,n_facets=n_facets,limit=limit,samples=samples,sample_seed=sample_seed,timeout=timeout,as_list=as_list,backend=backend,deterministic_glsm_basis=deterministic_glsm_basis,dualize=dualize,favorable=favorable,verbosity=verbosity):
             F=F_Theory_Uplift(O)
