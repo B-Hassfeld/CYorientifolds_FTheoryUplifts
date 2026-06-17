@@ -576,7 +576,7 @@ def inequivalent_Z2_actions(lattice_symmetries):
     dim = lattice_symmetries[0].shape[0]
     t_possibilities = {t for t0 in combinations_with_replacement([0,1],dim) for t in permutations(t0)}
     t_possibilities = [t for t in t_possibilities]
-    t_possibilities = np.delete(t_possibilities,t_possibilities.index((0,0,0,0)),0)
+    t_possibilities = np.delete(t_possibilities,t_possibilities.index(tuple([0]*dim)),0)
 
     inequivalent_t_possibilities = {frozenset([tuple(y) for y in x]) 
                                     for x in  np.transpose(np.array([np.mod(s@(t_possibilities.T),2) 
