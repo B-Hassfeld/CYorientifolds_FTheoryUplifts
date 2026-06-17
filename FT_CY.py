@@ -35,6 +35,7 @@ class CY_orientifold():
         self.__NHC_labels = None
         self.ambient_triangulation = False
         self._multiplier = 6
+        self.__o_planes = None
         match fan_polytope_or_points:
             case Polytope():
                 if xi is None:
@@ -234,6 +235,13 @@ class CY_orientifold():
             if len(self.__NHC_labels)==0:
                 return np.array([])
             return self.vectors_orbifold(self.__NHC_labels)
+
+    def o_planes(self):
+        """Returns the O-plane strata"""
+        if self.__o_planes is None:
+            self.__o_planes = UF.Z2_fixed_locus(self.CY_ambient_toric_fan(),self.__xi)
+        return self.__o_planes
+            
 
 class F_Theory_Uplift():
     """
