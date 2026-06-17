@@ -14,6 +14,17 @@ from scipy.optimize import milp, LinearConstraint
 
 def compute_partition(divisors,rays):
 
+    """
+    **Description:**
+    Uses linear equivalence to bring a set of divisors in a toric variety into the form of a partition of the anti-canonical, if it exists.
+    
+    **Arguments:**
+    - `divisors` *(np array or list)*: The input divisors
+    - `rays` *(np array)*: The primitive generators of the one-skeleton of the toric fan.
+    **Returns:**
+    (Boolean: whether partition exists, np array or None: output divisors if they exist, otherwise None) 
+    """
+
     null = np.zeros([rays.shape[0],rays.shape[1]],dtype=int)
     linear1 = np.tensordot(np.identity(2,dtype=int),rays,axes=0)
     linear1 = linear1.transpose(0, 2, 1, 3).reshape(len(divisors)*rays.shape[0], len(divisors)*rays.shape[1])
