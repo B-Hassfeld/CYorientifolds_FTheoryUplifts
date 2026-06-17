@@ -104,7 +104,10 @@ class CY_orientifold():
         self.__orbifold_line_bundle = orbifold_line_bundle
         if resolve_A1_singularities:
             if self.ambient_triangulation:
-                self.__resolve_A1_singularities()                
+                self.__resolve_A1_singularities()
+
+    def __repr__(self):
+        return f"A Calabi-Yau orientifold."
 
     def __resolve_A1_singularities(self):
         singular_two_cones = UF.Z2_fixed_locus(self.CY_ambient_toric_fan(),self.xi(),cone_dimension=2,denominator=2)
@@ -323,6 +326,9 @@ class F_Theory_Uplift():
             self.__LBB_N = LBB_N
             self.__LBW_N = self.vectors_smooth_uplift_ambient()@sta[1]+LBW_N
         self.__is_partition = is_part[0]
+
+    def __repr__(self):
+        return f"An F-theory uplift of a Calabi-Yau orientifold."
         
     def orientifold(self):
         """Returns the underlying CY_orientifold instance."""
