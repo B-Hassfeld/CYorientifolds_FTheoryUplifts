@@ -107,7 +107,7 @@ class CY_orientifold():
                 self.__resolve_A1_singularities()
 
     def __repr__(self):
-        return f"A Calabi-Yau orientifold."
+        return f"A Calabi-Yau orientifold"
 
     def __resolve_A1_singularities(self):
         singular_two_cones = UF.Z2_fixed_locus(self.CY_ambient_toric_fan(),self.xi(),cone_dimension=2,denominator=2)
@@ -328,7 +328,7 @@ class F_Theory_Uplift():
         self.__is_partition = is_part[0]
 
     def __repr__(self):
-        return f"An F-theory uplift of a Calabi-Yau orientifold."
+        return f"An F-theory uplift of a Calabi-Yau orientifold"
         
     def orientifold(self):
         """Returns the underlying CY_orientifold instance."""
