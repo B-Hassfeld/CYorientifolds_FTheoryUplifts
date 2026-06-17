@@ -556,6 +556,7 @@ def Z2_fixed_locus(vc_triangulation,q,cone_dimension=None,denominator=2):
     **Arguments:**
     - `vc_triangulation` *(triangulation of vector configuration)*: a simplicial toric variety
     - `q` *(list of integers or numpy array)*: scaled up co-prime lattice refinement vector
+    - `cone_dimension` *(int or None, optional, default=None)*: only considers subvarieties of this codimension
     - `denominator` *(int, optional, default=2)*: denominator of q/denominator
 
     **Returns:**
