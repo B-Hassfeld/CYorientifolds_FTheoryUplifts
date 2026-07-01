@@ -12,6 +12,170 @@ from cytools.vector_config import VectorConfiguration
 from scipy.optimize import nnls
 from scipy.optimize import milp, LinearConstraint
 
+from pathlib import Path
+import pandas as pd
+import pyarrow.parquet as pq
+import pyarrow as pa
+
+
+def fetch_f_theory_uplifts(
+    h11=None,
+    h21=None,
+    limit=100,
+    repo_id="jakobmoritz/F-theory_Uplifts_Nef-partitions",
+    index_path=None,
+    local_base=None,
+    columns=None,
+    as_pandas=True,
+):
+    """
+    Fetch rows from the F-theory uplifts dataset by Hodge numbers.
+
+    Parameters
+    ----------
+    h11 : int or None
+        Desired h11 value. If None, no h11 restriction is applied.
+
+    h21 : int or None
+        Desired h21 value. If None, no h21 restriction is applied.
+
+    limit : int or None
+        Maximum number of rows to return. Default is 100.
+        If None, return all matching rows.
+
+    repo_id : str
+        Hugging Face dataset repo ID.
+
+    index_path : str or None
+        Path to hodge_index.parquet. If None, reads from Hugging Face
+        or from local_base/index/hodge_index.parquet.
+
+    local_base : str or Path or None
+        If None, read data files from Hugging Face using hf:// paths.
+        If given, read from a local dataset directory containing
+        data_by_h11/ and index/.
+
+    columns : list[str] or None
+        Columns to read. If None, read all columns.
+
+    as_pandas : bool
+        If True, return a pandas DataFrame. If False, return a pyarrow Table.
+
+    Returns
+    -------
+    pandas.DataFrame or pyarrow.Table
+    """
+
+    if h11 is None and h21 is None:
+        raise ValueError("At least one of h11 or h21 must be provided.")
+
+    if limit is not None and limit <= 0:
+        empty = pa.table({})
+        return empty.to_pandas() if as_pandas else empty
+
+    if local_base is None:
+        base = f"hf://datasets/{repo_id}"
+        if index_path is None:
+            index_path = f"{base}/index/hodge_index.parquet"
+    else:
+        base = Path(local_base)
+        if index_path is None:
+            index_path = base / "index" / "hodge_index.parquet"
+
+    # Load small index file.
+    index = pd.read_parquet(index_path)
+
+    # Restrict index.
+    mask = pd.Series(True, index=index.index)
+
+    if h11 is not None:
+        mask &= index["h11"] == int(h11)
+
+    if h21 is not None:
+        mask &= index["h21"] == int(h21)
+
+    subindex = index.loc[mask].copy()
+
+    if len(subindex) == 0:
+        empty = pa.table({})
+        return empty.to_pandas() if as_pandas else empty
+
+    # Preserve natural Hodge ordering.
+    sort_cols = []
+    if "h11" in subindex.columns:
+        sort_cols.append("h11")
+    if "h21" in subindex.columns:
+        sort_cols.append("h21")
+    if "row_group" in subindex.columns:
+        sort_cols.append("row_group")
+
+    if sort_cols:
+        subindex = subindex.sort_values(sort_cols)
+
+    tables = []
+    rows_collected = 0
+
+    # Group by file to avoid reopening unnecessarily.
+    for file, group in subindex.groupby("file", sort=False):
+        if limit is not None and rows_collected >= limit:
+            break
+
+        if local_base is None:
+            parquet_path = f"{base}/{file}"
+        else:
+            parquet_path = base / file
+
+        pf = pq.ParquetFile(parquet_path)
+
+        if "row_group" not in group.columns:
+            raise ValueError(
+                "The index does not contain a 'row_group' column. "
+                "For efficient limited access, recreate hodge_index.parquet "
+                "with row-group information."
+            )
+
+        row_groups = group["row_group"].astype(int).tolist()
+
+        for rg in row_groups:
+            if limit is not None and rows_collected >= limit:
+                break
+
+            table = pf.read_row_group(rg, columns=columns)
+
+            # This should usually be unnecessary if the index is correct,
+            # but keep it as a safety check.
+            if h11 is not None or h21 is not None:
+                df_check = table.select(
+                    [c for c in ["h11", "h21"] if c in table.column_names]
+                ).to_pandas()
+
+                keep = pd.Series(True, index=df_check.index)
+
+                if h11 is not None:
+                    keep &= df_check["h11"] == int(h11)
+
+                if h21 is not None:
+                    keep &= df_check["h21"] == int(h21)
+
+                if not keep.all():
+                    table = table.filter(pa.array(keep.to_numpy()))
+
+            if limit is not None:
+                remaining = limit - rows_collected
+                if table.num_rows > remaining:
+                    table = table.slice(0, remaining)
+
+            tables.append(table)
+            rows_collected += table.num_rows
+
+    if len(tables) == 0:
+        empty = pa.table({})
+        return empty.to_pandas() if as_pandas else empty
+
+    result = pa.concat_tables(tables, promote_options="default")
+
+    return result.to_pandas() if as_pandas else result
+
 def compute_partition(divisors,rays):
 
     """
