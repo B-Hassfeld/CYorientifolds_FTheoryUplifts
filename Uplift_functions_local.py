@@ -3086,84 +3086,84 @@ def intersection_number_surfaces(IN,basis_len):
                 tt=tuple((ct,)+tuple(np.array(sorted(prod))-1))
                 new_IN[tt]=IN.get(tu)
     return new_IN,surface_dict
-def transform_intersections(IN,Q,basis,tol=1e-12):
-    """
-    Transform a symmetric rank-d tensor under
-        t_old = A @ u_new,
-        A = inv(Q[:, basis-1]).
-    Parameters
-    ----------
-    IN : dict
-        Symmetric tensor dictionary.
-        For rank d >= 2, keys are tuples, e.g.
-            (1, 1, 2, 5): value
-        For rank d = 1, keys may be either
-            1: value
-        or
-            (1,): value
-        Indices are assumed to be 1-based.
-    Q : array_like
-        GLSM matrix.
-    basis : array_like
-        1-based column indices defining the divisor basis.
-    tol : float
-        Numerical tolerance.
-    Returns
-    -------
-    dict
-        Tensor components in the new basis.
-        For rank-1 tensors, the output uses the same key convention
-        as the input:
-            integer keys -> integer keys
-            length-1 tuple keys -> length-1 tuple keys
-    """
-    M=Q[:,basis-1]
-    A=np.linalg.inv(M)
-    h=A.shape[0]
-    if not IN:
-        return {}
-    first_key=next(iter(IN))
-    if isinstance(first_key,(int,np.integer)):
-        d=1
-        integer_rank1_keys=True
-    else:
-        d=len(first_key)
-        integer_rank1_keys=False
-    rows=[[(j+1,A[i,j]) for j in range(h) if abs(A[i,j])>tol] for i in range(h)]
-    out=defaultdict(float)
-    for key, kappa in IN.items():
-        if isinstance(key,(int,np.integer)):
-            key_tuple=(int(key),)
-        else:
-            key_tuple=tuple(key)
-        counts=Counter(key_tuple)
-        mult=factorial(d)
-        for n in counts.values():
-            mult//=factorial(n)
-        poly={(): kappa*mult}
-        for i in key_tuple:
-            newpoly=defaultdict(float)
-            for mon, coeff in poly.items():
-                for j, a in rows[i-1]:
-                    newpoly[tuple(sorted(mon+(j,)))]+=coeff*a
-            poly=newpoly
-        for mon, coeff in poly.items():
-            out[mon]+=coeff
-    result={}
-    for key, coeff in out.items():
-        counts=Counter(key)
-        mult=factorial(d)
-        for n in counts.values():
-            mult//=factorial(n)
-        val=coeff/mult
-        if abs(val)>tol:
-            if np.isclose(val,round(val),atol=tol):
-                val=int(round(val))
-            if d==1 and integer_rank1_keys:
-                result[key[0]]=val
-            else:
-                result[key]=val
-    return result
+# def transform_intersections(IN,Q,basis,tol=1e-12):
+#     """
+#     Transform a symmetric rank-d tensor under
+#         t_old = A @ u_new,
+#         A = inv(Q[:, basis-1]).
+#     Parameters
+#     ----------
+#     IN : dict
+#         Symmetric tensor dictionary.
+#         For rank d >= 2, keys are tuples, e.g.
+#             (1, 1, 2, 5): value
+#         For rank d = 1, keys may be either
+#             1: value
+#         or
+#             (1,): value
+#         Indices are assumed to be 1-based.
+#     Q : array_like
+#         GLSM matrix.
+#     basis : array_like
+#         1-based column indices defining the divisor basis.
+#     tol : float
+#         Numerical tolerance.
+#     Returns
+#     -------
+#     dict
+#         Tensor components in the new basis.
+#         For rank-1 tensors, the output uses the same key convention
+#         as the input:
+#             integer keys -> integer keys
+#             length-1 tuple keys -> length-1 tuple keys
+#     """
+#     M=Q[:,basis-1]
+#     A=np.linalg.inv(M)
+#     h=A.shape[0]
+#     if not IN:
+#         return {}
+#     first_key=next(iter(IN))
+#     if isinstance(first_key,(int,np.integer)):
+#         d=1
+#         integer_rank1_keys=True
+#     else:
+#         d=len(first_key)
+#         integer_rank1_keys=False
+#     rows=[[(j+1,A[i,j]) for j in range(h) if abs(A[i,j])>tol] for i in range(h)]
+#     out=defaultdict(float)
+#     for key, kappa in IN.items():
+#         if isinstance(key,(int,np.integer)):
+#             key_tuple=(int(key),)
+#         else:
+#             key_tuple=tuple(key)
+#         counts=Counter(key_tuple)
+#         mult=factorial(d)
+#         for n in counts.values():
+#             mult//=factorial(n)
+#         poly={(): kappa*mult}
+#         for i in key_tuple:
+#             newpoly=defaultdict(float)
+#             for mon, coeff in poly.items():
+#                 for j, a in rows[i-1]:
+#                     newpoly[tuple(sorted(mon+(j,)))]+=coeff*a
+#             poly=newpoly
+#         for mon, coeff in poly.items():
+#             out[mon]+=coeff
+#     result={}
+#     for key, coeff in out.items():
+#         counts=Counter(key)
+#         mult=factorial(d)
+#         for n in counts.values():
+#             mult//=factorial(n)
+#         val=coeff/mult
+#         if abs(val)>tol:
+#             if np.isclose(val,round(val),atol=tol):
+#                 val=int(round(val))
+#             if d==1 and integer_rank1_keys:
+#                 result[key[0]]=val
+#             else:
+#                 result[key]=val
+#     return result
 
 def tensor_symm_in_basis(tensor,basis,Q=None,tol=1e-12):
     """

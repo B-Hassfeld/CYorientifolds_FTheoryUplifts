@@ -1692,7 +1692,7 @@ class F_Theory_Uplift():
         else:
             return ((),())
 
-    def nef_partition_M(self,only_intersecting: bool=False):
+    def nef_partition_M(self,toric_fan_adapted: bool=False):
         """
         **Description:**
     
@@ -1704,8 +1704,8 @@ class F_Theory_Uplift():
     
         """
         if self.is_nef_partition():
-            if only_intersecting:
-                return (tuple(np.where(self.line_bundle_base_M(only_intersecting=True)==1)[0]+1),tuple(np.where(self.line_bundle_weierstrass_M(only_intersecting=True)==1)[0]+1))
+            if toric_fan_adapted:
+                return [np.arange(1,len(self.intersecting_divisors_B_M(as_labels=True))+1),np.arange(len(self.intersecting_divisors_B_M(as_labels=True))+1,len(self.intersecting_divisors_M(as_labels=True))+1)]
             else:
                 return (tuple(np.where(self.line_bundle_base_M()==1)[0]+1),tuple(np.where(self.line_bundle_weierstrass_M()==1)[0]+1))
         else:
