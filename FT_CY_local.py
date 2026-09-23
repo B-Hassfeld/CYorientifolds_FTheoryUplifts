@@ -1588,7 +1588,7 @@ class F_Theory_Uplift():
             raise ValueError("Euler number can only be computed for a nef-decomposition")
         if self.__chi is None:
             if self.__hodge_numbers.get((1,1),None) is None or self.__hodge_numbers.get((2,1),None) is None or self.__hodge_numbers.get((3,1),None) is None:
-                chi_loc = UF.cicy4_chern_localization_divisors(self.smooth_uplift_ambient_toric_fan(), [self.line_bundle_base_N(),self.line_bundle_weierstrass_N()], 4)
+                chi_loc = UF.cicy4_toric_chern_class(self.smooth_uplift_ambient_toric_fan(), [self.line_bundle_base_N(),self.line_bundle_weierstrass_N()], 4)
                 nO3=UF.three_cone_intersections(self.polytope().dual(),self.CY_ambient_toric_fan(),UF.Z2_fixed_locus(self.CY_ambient_toric_fan(),self.xi(),3))
                 self.__chi = chi_loc+6*nO3
             else:
@@ -1599,14 +1599,14 @@ class F_Theory_Uplift():
         if not self.is_nef_decomposition():
             raise ValueError("Second Chern class can only be computed for a nef-decomposition")
         if self.__c2 is None:
-            self.__c2 = UF.cicy4_chern_localization_divisors(self.smooth_uplift_ambient_toric_fan(), [self.line_bundle_base_N(),self.line_bundle_weierstrass_N()], 2)
+            self.__c2 = UF.cicy4_toric_chern_class(self.smooth_uplift_ambient_toric_fan(), [self.line_bundle_base_N(),self.line_bundle_weierstrass_N()], 2)
         return self.__c2
 
     def c3(self):
         if not self.is_nef_decomposition():
             raise ValueError("Third Chern class can only be computed for a nef-decomposition")
         if self.__c3 is None:
-            self.__c3 = UF.cicy4_chern_localization_divisors(self.smooth_uplift_ambient_toric_fan(), [self.line_bundle_base_N(),self.line_bundle_weierstrass_N()], 3)
+            self.__c3 = UF.cicy4_toric_chern_class(self.smooth_uplift_ambient_toric_fan(), [self.line_bundle_base_N(),self.line_bundle_weierstrass_N()], 3)
         return self.__c3
 
     def is_regular(self):
