@@ -62,7 +62,7 @@ def compute_partition(divisors,rays):
     """
     null=np.zeros([rays.shape[0],rays.shape[1]],dtype=int)
     linear1=np.tensordot(np.identity(2,dtype=int),rays,axes=0)
-    linear1=linear1.transpose(0, 2, 1, 3).reshape(len(divisors)*rays.shape[0], len(divisors)*rays.shape[1])
+    linear1=linear1.transpose(0,2,1,3).reshape(len(divisors)*rays.shape[0],len(divisors)*rays.shape[1])
     linear2=np.hstack([rays]*len(divisors))
     affine1=np.concatenate(divisors)
     affine2=sum(divisors)-1
@@ -75,14 +75,14 @@ def compute_partition(divisors,rays):
     upper=np.concatenate([upper1,upper2])
     c=np.zeros(linear.shape[1])
     integrality=np.ones_like(c)
-    constraints=LinearConstraint(linear, lower, upper)
-    res=milp(c=np.zeros(linear.shape[1]), constraints=constraints, integrality=np.ones(linear.shape[1]), bounds=(-np.inf, np.inf))
+    constraints=LinearConstraint(linear,lower,upper)
+    res=milp(c=np.zeros(linear.shape[1]),constraints=constraints,integrality=np.ones(linear.shape[1]),bounds=(-np.inf,np.inf))
     if not res.success or res.x is None:
-        return (False, None)
+        return (False,None)
     sol=np.rint(res.x.reshape(len(divisors),len(rays[0]))@(rays.T)+np.array(divisors)).astype(int)
     return (True,sol)
 
-def contains_row(arr: np.array, target: np.array):
+def contains_row(arr: np.array,target: np.array):
     """
     **Description:**
     Determines whether the one-dimensional array `target` occurs as a row of the two-dimensional array `arr`.
@@ -92,7 +92,7 @@ def contains_row(arr: np.array, target: np.array):
     **Returns:**
     - `bool`: `True` if `target` is a row of `arr`, otherwise `False`.
     """
-    return np.any(np.all(arr==target, axis=1))
+    return np.any(np.all(arr==target,axis=1))
 
 def contains_rows(arr: np.array,targets: np.array):
     """
@@ -104,9 +104,9 @@ def contains_rows(arr: np.array,targets: np.array):
     **Returns:**
     - `bool`: `True` if every target row occurs in `arr`, otherwise `False`.
     """
-    return np.any((targets[:, None, :]==arr[None, :, :]).all(axis=2), axis=1).all()
+    return np.any((targets[:,None,:]==arr[None,:,:]).all(axis=2),axis=1).all()
 
-def get_same_rows(A: np.array, B: np.array):
+def get_same_rows(A: np.array,B: np.array):
     """
     **Description:**
     Computes the rows of `A` that also occur as rows of `B`.
@@ -116,9 +116,9 @@ def get_same_rows(A: np.array, B: np.array):
     **Returns:**
     - `numpy.ndarray`: The rows of `A` that also occur in `B`.
     """
-    return A[np.where((A[:, None, :]==B[None, :, :]).all(axis=2))[0]]
+    return A[np.where((A[:,None,:]==B[None,:,:]).all(axis=2))[0]]
 
-def same_rows(A, B):
+def same_rows(A,B):
     """
     **Description:**
     Determines whether `A` and `B` contain the same rows with the same multiplicities, independent of row order.
@@ -128,9 +128,9 @@ def same_rows(A, B):
     **Returns:**
     - `bool`: `True` if `A` and `B` have the same rows with the same multiplicities, otherwise `False`.
     """
-    rowsA, countsA=np.unique(A, axis=0, return_counts=True)
-    rowsB, countsB=np.unique(B, axis=0, return_counts=True)
-    return np.array_equal(rowsA, rowsB) and np.array_equal(countsA, countsB)
+    rowsA, countsA=np.unique(A,axis=0,return_counts=True)
+    rowsB, countsB=np.unique(B,axis=0,return_counts=True)
+    return np.array_equal(rowsA,rowsB) and np.array_equal(countsA,countsB)
 
 def dual_face_Cayley_polytope(Cdvert: np.array,f):
     """
@@ -142,7 +142,7 @@ def dual_face_Cayley_polytope(Cdvert: np.array,f):
     **Returns:**
     - `Polytope`: The dual face.
     """
-    return Polytope(Cdvert[np.all(Cdvert@f.vertices().T==0, axis=1)])
+    return Polytope(Cdvert[np.all(Cdvert@f.vertices().T==0,axis=1)])
 
 def h11_2_part(Cay: Polytope,Cayd: Polytope,det=False):
     """
@@ -236,7 +236,7 @@ def get_indices(arr: np.array,targets: np.array):
     **Returns:**
     - `numpy.ndarray`: The indices of matching rows in `arr`.
     """
-    return  np.where(np.any((arr[:, None, :]==targets).all(axis=2), axis=1))[0]
+    return  np.where(np.any((arr[:,None,:]==targets).all(axis=2),axis=1))[0]
 
 def get_index(arr: np.array,target: np.array):
     """
@@ -248,7 +248,7 @@ def get_index(arr: np.array,target: np.array):
     **Returns:**
     - `numpy.ndarray`: The indices of rows of `arr` equal to `target`.
     """
-    return  np.where(np.all(arr==target, axis=1))[0]
+    return  np.where(np.all(arr==target,axis=1))[0]
 
 def glsm_from_points(pts):
     """
@@ -293,7 +293,7 @@ def find_trilayer_vertex_polytope(p,as_index=False):
     - `numpy.ndarray` or `int`: The distinguished vertex, or its index if `as_index=True`.
     """
     glsm_vert=glsm_from_points(p.vertices())
-    half_anticanon=np.sum(glsm_vert, axis=1)//2
+    half_anticanon=np.sum(glsm_vert,axis=1)//2
     index=get_indices(glsm_vert.T,np.array([half_anticanon]))[0]
     if as_index:
         return index
@@ -311,7 +311,7 @@ def find_trilayer_vertex_vertices(V,as_vertex_index=False):
     - `numpy.ndarray` or `int`: The distinguished vertex, or its index if `as_vertex_index=True`.
     """
     glsm_vert=glsm_from_points(V)
-    half_anticanon=np.sum(glsm_vert, axis=1)//2
+    half_anticanon=np.sum(glsm_vert,axis=1)//2
     index=get_indices(glsm_vert.T,np.array([half_anticanon]))[0]
     if as_vertex_index:
         return index
@@ -362,9 +362,9 @@ def Newton_Polytope(pts,weights):
     **Returns:**
     - `Polytope`: The Newton polytope of the divisor.
     """
-    return h_polytope.HPolytope(np.column_stack([pts, weights]).astype(int))
+    return h_polytope.HPolytope(np.column_stack([pts,weights]).astype(int))
 
-def row_difference(A: np.array, B: np.array):
+def row_difference(A: np.array,B: np.array):
     """
     **Description:**
     Computes all rows of `A` that do not occur as rows of `B`.
@@ -374,7 +374,7 @@ def row_difference(A: np.array, B: np.array):
     **Returns:**
     - `numpy.ndarray`: Rows of `A` that are not rows of `B`.
     """
-    return A[~np.any((A[:, None, :]==B[None, :, :]).all(axis=2), axis=1)]
+    return A[~np.any((A[:,None,:]==B[None,:,:]).all(axis=2),axis=1)]
 
 def points_not_interior_to_facets_and_codim2_faces(p: Polytope):
     """
@@ -401,9 +401,9 @@ def get_lower_dimensional_cones(cones,d):
     **Returns:**
     - `list`: The list of distinct `d`-ray cones.
     """
-    return list({combo for row in cones for combo in combinations(row, d)})
+    return list({combo for row in cones for combo in combinations(row,d)})
 
-def lattice_refinement(q, denominator=2):
+def lattice_refinement(q,denominator=2):
     """
     **Description:**
     Returns the smallest integral embedding of the unit lattice into a refined lattice in which `q/denominator` becomes integral.
@@ -513,35 +513,35 @@ def is_Gorenstein_full_dim(cone):
     """
     Tests whether the cone is Gorenstein and returns its Gorenstein vector.
     """
-    M=np.asarray(cone.extremal_rays(), dtype=np.int64)
-    n=np.rint(np.linalg.lstsq(M, np.ones(len(M)), rcond=None)[0]).astype(np.int64)
-    return (True, n) if np.all(M@n==1) else (False, None)
+    M=np.asarray(cone.extremal_rays(),dtype=np.int64)
+    n=np.rint(np.linalg.lstsq(M,np.ones(len(M)),rcond=None)[0]).astype(np.int64)
+    return (True,n) if np.all(M@n==1) else (False,None)
 
 def is_Gorenstein(cone):
     """Tests whether a cone is Gorenstein and returns a Gorenstein vector."""
-    M=np.asarray(cone.extremal_rays(), dtype=int)
-    n=np.zeros(M.shape[1], dtype=int)
-    B=np.eye(M.shape[1], dtype=int)
+    M=np.asarray(cone.extremal_rays(),dtype=int)
+    n=np.zeros(M.shape[1],dtype=int)
+    B=np.eye(M.shape[1],dtype=int)
     for a in M:
         c, b=a@B, int(1-a@n)
         if not np.any(c):
             if b:
                 return False, None
             continue
-        for j in range(1, len(c)):
+        for j in range(1,len(c)):
             if c[j]:
                 x, y=int(c[0]), int(c[j])
-                g=math.gcd(x, y)
-                u=pow(x//g,-1, abs(y//g))
+                g=math.gcd(x,y)
+                u=pow(x//g,-1,abs(y//g))
                 v=(g-u*x)//y
-                T=np.array([[u,-y//g], [v, x//g]], dtype=int)
-                B[:, [0, j]]=B[:, [0, j]]@T
+                T=np.array([[u,-y//g],[v,x//g]],dtype=int)
+                B[:,[0,j]]=B[:,[0,j]]@T
                 c[0], c[j]=g, 0
         g=int(c[0])
         if b%g:
             return False, None
-        n+=B[:, 0]*(b//g)
-        B=B[:, 1:]
+        n+=B[:,0]*(b//g)
+        B=B[:,1:]
     return True, n
 
 def is_reflexive_Gorenstein(cone):
@@ -575,7 +575,7 @@ def Gorenstein_index(cone):
         return is_Gorenstein(cone)[1]@is_Gorenstein(dual_cone)[1]
     raise ValueError("Cone is not reflexive Gorenstein")
 
-def Cartier_index(toric_fan, weights):
+def Cartier_index(toric_fan,weights):
     """
     Computes the Cartier index of a Q-Cartier toric divisor.
     Returns None if the divisor is not Q-Cartier.
@@ -585,16 +585,16 @@ def Cartier_index(toric_fan, weights):
     for c in toric_fan.cones():
         A=toric_fan.vectors(c)
         b=weights[np.asarray(c)-1]
-        y=-np.linalg.lstsq(A, b, rcond=None)[0]
-        if not np.allclose(A@y,-b, rtol=0, atol=1e-10):
+        y=-np.linalg.lstsq(A,b,rcond=None)[0]
+        if not np.allclose(A@y,-b,rtol=0,atol=1e-10):
             return None
         k=1
-        while not np.allclose(k*y, np.rint(k*y), rtol=0, atol=1e-10):
+        while not np.allclose(k*y,np.rint(k*y),rtol=0,atol=1e-10):
             k+=1
         indices.append(k)
     return math.lcm(*indices)
 
-def is_Cartier(toric_fan, weights, return_Q_Cartier_data=False, decimals=10):
+def is_Cartier(toric_fan,weights,return_Q_Cartier_data=False,decimals=10):
     """
     Determines whether a toric divisor is Cartier and optionally returns
     local Q-Cartier data.
@@ -605,19 +605,19 @@ def is_Cartier(toric_fan, weights, return_Q_Cartier_data=False, decimals=10):
     for c in toric_fan.cones():
         arr=toric_fan.vectors(c)
         cone_gen_weights=weights[np.array(c)-1]
-        y=-np.linalg.lstsq(arr, cone_gen_weights, rcond=None)[0]
-        if not np.allclose(arr@y,-cone_gen_weights, rtol=0, atol=1e-10):
+        y=-np.linalg.lstsq(arr,cone_gen_weights,rcond=None)[0]
+        if not np.allclose(arr@y,-cone_gen_weights,rtol=0,atol=1e-10):
             if return_Q_Cartier_data:
                 cartier_data.append(None)
                 is_cartier=False
                 continue
             return False, None
-        if np.allclose(y, np.round(y), rtol=0, atol=1e-10):
+        if np.allclose(y,np.round(y),rtol=0,atol=1e-10):
             cartier_data.append(np.round(y).astype(int))
         else:
             is_cartier=False
             if return_Q_Cartier_data:
-                cartier_data.append(np.round(y, decimals=decimals))
+                cartier_data.append(np.round(y,decimals=decimals))
             else:
                 return False, None
     return is_cartier, cartier_data
@@ -674,7 +674,7 @@ def moving_cone(toric_variety):
     - `Cone`: The moving cone.
     """
     rays=toric_variety.vectors()
-    glsm=np.array(integral_nullspace(np.asarray(rays.T, dtype=int))).T
+    glsm=np.array(integral_nullspace(np.asarray(rays.T,dtype=int))).T
     h_planes=np.array([h for i in range(len(rays)) for h in Cone(np.delete(glsm.T,i,0)).hyperplanes()])@glsm
     mov=Cone(hyperplanes=h_planes)
     return mov
@@ -784,11 +784,11 @@ def base_locus(sections,cones=None,dim=4):
     minimal_hitting_sets=[]
     if type(cones)==type(None):
         for codim in range(1,dim+1):
-            for combo in combinations(range(num_coords), codim):
+            for combo in combinations(range(num_coords),codim):
                 combo_set=set(combo)
                 if any(set(mhs).issubset(combo_set) for mhs in minimal_hitting_sets):
                     continue
-                if B[list(combo), :].any(axis=0).all():
+                if B[list(combo),:].any(axis=0).all():
                     minimal_hitting_sets.append(combo)            
         return [tuple(x+1 for x in mhs) for mhs in minimal_hitting_sets]
     else:
@@ -797,7 +797,7 @@ def base_locus(sections,cones=None,dim=4):
                 combo_set=set(combo)
                 if any(set(mhs).issubset(combo_set) for mhs in minimal_hitting_sets):
                     continue
-                if B[np.array(combo)-1, :].any(axis=0).all():
+                if B[np.array(combo)-1,:].any(axis=0).all():
                     minimal_hitting_sets.append(combo)            
         return [mhs for mhs in minimal_hitting_sets]
 
@@ -847,7 +847,7 @@ def normal_fan(polytopes,inequalities=None,maximal_refinement=False,triangulate_
             return (None,None,None)
         else:
             return (None,None)
-    maximal_blow_ups=[h_polytope.HPolytope(np.vstack([[np.concatenate([np.delete(inequalities,-1,0)@np.array([polytopes[j].vertices()[x] for j,x in enumerate(vertex_split[i])]),[inequalities[-1]]])],np.vstack([(p.vertices()-m).T, [0]*len(p.vertices())]).T ])).points() for i,m in enumerate(p.vertices())]
+    maximal_blow_ups=[h_polytope.HPolytope(np.vstack([[np.concatenate([np.delete(inequalities,-1,0)@np.array([polytopes[j].vertices()[x] for j,x in enumerate(vertex_split[i])]),[inequalities[-1]]])],np.vstack([(p.vertices()-m).T,[0]*len(p.vertices())]).T ])).points() for i,m in enumerate(p.vertices())]
     maximal_blow_ups=[np.unique([np.rint(x/np.gcd.reduce(x)).astype(int) for x in np.delete(b,np.where(np.all(b==0,axis=1))[0][0],0)],axis=0) for b in maximal_blow_ups]
     all_vectors=np.unique(np.array([y for x in maximal_blow_ups for y in x]),axis=0)
     all_weights=np.array([-np.array([(pol.vertices()[vertex_split[np.where([np.any(np.all(y-x==0,axis=-1)) for y in maximal_blow_ups])[0][0]][j]])@x for x in all_vectors]) for j,pol in enumerate(polytopes)])
@@ -866,7 +866,7 @@ def normal_fan(polytopes,inequalities=None,maximal_refinement=False,triangulate_
     else:
         return (refine_fan(make_simplicial(n_fan),all_vectors),all_weights)
 
-def nested_sum(lists, depth=0, acc=0):
+def nested_sum(lists,depth=0,acc=0):
     """
     **Description:**
     Recursively forms all sums obtained by choosing one element from each list in `lists`.
@@ -879,9 +879,9 @@ def nested_sum(lists, depth=0, acc=0):
     """
     if depth==len(lists):
         return acc
-    return [nested_sum(lists, depth+1, acc+x) for x in lists[depth]]
+    return [nested_sum(lists,depth+1,acc+x) for x in lists[depth]]
 
-def flatten(lst, depth):
+def flatten(lst,depth):
     """
     **Description:**
     Recursively flattens a nested list by the specified number of levels.
@@ -895,8 +895,8 @@ def flatten(lst, depth):
         return lst
     result=[]
     for x in lst:
-        if isinstance(x, list):
-            result.extend(flatten(x, depth-1))
+        if isinstance(x,list):
+            result.extend(flatten(x,depth-1))
         else:
             result.append(x)
     return result
@@ -1065,7 +1065,7 @@ def refine_fan(fan,blowups_or_all_vectors=None):
             link_base_len=len(link_base)
             for c in new_fan.link(link_base):
                 all_cones.discard(tuple(sorted(link_base+c)))
-                for comb in combinations(link_base, link_base_len-1):
+                for comb in combinations(link_base,link_base_len-1):
                     all_cones.add(tuple(sorted(comb+c+(label,))))
             new_fan=Fan(vc=new_fan.vc,cones=all_cones)
         return new_fan
@@ -1076,12 +1076,12 @@ def refine_fan(fan,blowups_or_all_vectors=None):
             link_base_len=len(link_base)
             for c in new_fan.link(link_base):
                 all_cones.discard(tuple(sorted(link_base+c)))
-                for comb in combinations(link_base, link_base_len-1):
+                for comb in combinations(link_base,link_base_len-1):
                     all_cones.add(tuple(sorted(comb+c+(label,))))
             new_fan=Fan(vc=new_fan.vc,cones=all_cones)
         return new_fan
 
-def find_cone_general(new_ray, current_cones, all_vectors):
+def find_cone_general(new_ray,current_cones,all_vectors):
     """
     **Description:**
     Searches the current cones for a minimal set of one-indexed ray labels whose strictly positive linear combination gives `new_ray`.
@@ -1096,9 +1096,9 @@ def find_cone_general(new_ray, current_cones, all_vectors):
         cone_list=list(cone)
         numpy_indices=[idx-1 for idx in cone_list]
         A=all_vectors[numpy_indices].T
-        x, residual=nnls(A, new_ray)
+        x, residual=nnls(A,new_ray)
         if residual<1e-10:
-            carrier_face=frozenset(cone_list[i] for i, coeff in enumerate(x) if coeff>1e-10)
+            carrier_face=frozenset(cone_list[i] for i,coeff in enumerate(x) if coeff>1e-10)
             return carrier_face
     return None
 
@@ -1115,7 +1115,7 @@ def array_to_latex(arr):
     """
     if len(arr.shape)>2:
         raise ValueError("Only 2D matrices are supported.")
-    lines=["            "+" & ".join(map(str, row))+r" \\" for row in arr]
+    lines=["            "+" & ".join(map(str,row))+r" \\" for row in arr]
     return "\\begin{pmatrix}\n"+"\n".join(lines)+"\n        \\end{pmatrix}"
 
 def integral_gale_transform(points):
@@ -1133,19 +1133,19 @@ def integral_gale_transform(points):
     n, d=points.shape
     if n<=d+1:
         raise ValueError(f"Need strictly more points (n={n}) than dimensions + 1 (d+1={d+1}).")
-    lifted_points=np.hstack((points, np.ones((n, 1))))
+    lifted_points=np.hstack((points,np.ones((n,1))))
     A=Matrix(lifted_points.T)
     null_basis_vectors=A.nullspace()
     if not null_basis_vectors:
         return np.array([])
     B=Matrix.hstack(*null_basis_vectors)
     for j in range(B.cols):
-        LCM=lcm([fraction(B[i, j])[1] for i in range(B.rows)])
-        B[:, j]=B[:, j]*LCM
+        LCM=lcm([fraction(B[i,j])[1] for i in range(B.rows)])
+        B[:,j]=B[:,j]*LCM
     gale_points=np.array(B.T).astype(int)
     return gale_points
 
-def find_cone(new_ray, current_cones, all_vectors, tol=1e-10):
+def find_cone(new_ray,current_cones,all_vectors,tol=1e-10):
     """
     **Description:**
     Lifts the input points by appending a column of ones, computes the rational nullspace exactly using SymPy, and clears denominators to obtain an integral Gale transform.
@@ -1159,12 +1159,12 @@ def find_cone(new_ray, current_cones, all_vectors, tol=1e-10):
     for cone in current_cones:
         numpy_indices=np.array(cone)-1
         A=all_vectors[numpy_indices].T
-        coeffs=np.linalg.solve(A, new_ray)
+        coeffs=np.linalg.solve(A,new_ray)
         if np.all(coeffs>=-tol):
-            return frozenset(idx for idx, coeff in zip(cone, coeffs) if coeff>tol)
+            return frozenset(idx for idx,coeff in zip(cone,coeffs) if coeff>tol)
     return None
 
-def divisor_intersections(fan, intersection_dict,divisors, basis_set,as_LLL=True):
+def divisor_intersections(fan,intersection_dict,divisors,basis_set,as_LLL=True):
     """
     **Description:**
     Computes the curve classes obtained by intersecting a list of divisors with toric strata, expressed in a chosen basis of curve homology.
@@ -1178,12 +1178,12 @@ def divisor_intersections(fan, intersection_dict,divisors, basis_set,as_LLL=True
     - `numpy.ndarray`: The divisor-intersection curve classes, optionally LLL-reduced.
     """
     codim_cicy=len(divisors)
-    simplices=get_lower_dimensional_cones(fan.cones(), fan.dim-codim_cicy-1)
+    simplices=get_lower_dimensional_cones(fan.cones(),fan.dim-codim_cicy-1)
     divisor_nonvanishing_sets=[]
     for div in divisors:
         divisor_nonvanishing_sets.append(set(np.where(div!=0)[0]+1))
-    curves_homology_in_basis=np.zeros((len(simplices), len(basis_set)), dtype=int)
-    basis_idx_map={b: idx for idx, b in enumerate(basis_set)}
+    curves_homology_in_basis=np.zeros((len(simplices),len(basis_set)),dtype=int)
+    basis_idx_map={b: idx for idx,b in enumerate(basis_set)}
     for s_idx, s in enumerate(simplices):
         star_s=fan.star(s)
         link_rays={item for sub_tuple in star_s for item in sub_tuple}
@@ -1198,18 +1198,18 @@ def divisor_intersections(fan, intersection_dict,divisors, basis_set,as_LLL=True
             total_intersection=0
             for ts in product(*valid_intersections):
                 key=tuple(sorted(s+ts+(i,)))
-                coefficient=np.prod([divisors[a][ray-1]for a, ray in enumerate(ts)])
-                total_intersection+=coefficient*intersection_dict.get(key, 0)
-            curves_homology_in_basis[s_idx, i_idx]=total_intersection
+                coefficient=np.prod([divisors[a][ray-1]for a,ray in enumerate(ts)])
+                total_intersection+=coefficient*intersection_dict.get(key,0)
+            curves_homology_in_basis[s_idx,i_idx]=total_intersection
     if as_LLL:
-        reduced=np.array(lll_reduce(np.asarray(curves_homology_in_basis, dtype=int).T)).T
-        return reduced[np.any(reduced!=0, axis=1)]
+        reduced=np.array(lll_reduce(np.asarray(curves_homology_in_basis,dtype=int).T)).T
+        return reduced[np.any(reduced!=0,axis=1)]
     return curves_homology_in_basis
 
 def make_rows_integer(arr,den=2):
     arr=np.asarray(arr).copy()
-    integer=np.all(np.isclose(arr, np.rint(arr)), axis=1)
-    den_integer=np.all(np.isclose(den*arr, np.rint(den*arr)), axis=1)
+    integer=np.all(np.isclose(arr,np.rint(arr)),axis=1)
+    den_integer=np.all(np.isclose(den*arr,np.rint(den*arr)),axis=1)
     mask=~integer&den_integer
     arr[mask]*=den
     return np.rint(arr).astype(int)
@@ -1269,7 +1269,7 @@ def chi_O3_uplift(O):
     fixed_cones=Z2_fixed_locus(O.CY_ambient_toric_fan(),O.xi(),O.dim()-1)
     return chi_O3(O.CY_ambient_toric_fan(),fixed_cones)
 
-def intersection_test(fan, intersection_dict,divisors,target_divisors):
+def intersection_test(fan,intersection_dict,divisors,target_divisors):
     codim_cicy=len(divisors)
     divisor_nonvanishing_sets=[]
     for div in divisors:
@@ -1286,8 +1286,8 @@ def intersection_test(fan, intersection_dict,divisors,target_divisors):
             total_intersection=0
             for ts in product(*valid_intersections):
                 key=tuple(sorted(s+ts+(d,)))
-                coefficient=np.prod([divisors[a][ray-1]for a, ray in enumerate(ts)])
-                total_intersection+=coefficient*intersection_dict.get(key, 0)
+                coefficient=np.prod([divisors[a][ray-1]for a,ray in enumerate(ts)])
+                total_intersection+=coefficient*intersection_dict.get(key,0)
             if total_intersection!=0:
                 curves_homology_in_basis[i]=True
                 break
@@ -1308,10 +1308,10 @@ def _vertex_key(vertices: np.ndarray)->tuple:
     """
     Hashable key for a face, independent of the ordering of its vertices.
     """
-    vertices=np.asarray(vertices, dtype=np.int64)
-    return tuple(sorted(map(tuple, vertices.tolist())))
+    vertices=np.asarray(vertices,dtype=np.int64)
+    return tuple(sorted(map(tuple,vertices.tolist())))
 
-def h11_2_part_l_fast(Cay: Polytope, Cayd: Polytope, det: bool=False)->int:
+def h11_2_part_l_fast(Cay: Polytope,Cayd: Polytope,det: bool=False)->int:
     """
     Faster implementation of h11_2_part_l.
     The implementation avoids constructing a new Polytope for every face.
@@ -1328,11 +1328,11 @@ def h11_2_part_l_fast(Cay: Polytope, Cayd: Polytope, det: bool=False)->int:
     cay_faces_1=Cay.faces(1)
     cay_faces_2=Cay.faces(2)
     cay_faces_3=Cay.faces(3)
-    dual_dimensions={n-1, n-2, n-3}
+    dual_dimensions={n-1,n-2,n-3}
     cayd_faces={d: Cayd.faces(d) for d in dual_dimensions}
-    cayd_face_lookup={d: {_vertex_key(face.vertices()): face for face in faces} for d, faces in cayd_faces.items()}
-    cay_vertices=np.asarray(Cay.vertices(), dtype=int)
-    cayd_vertices=np.asarray(Cayd.vertices(), dtype=int)
+    cayd_face_lookup={d: {_vertex_key(face.vertices()): face for face in faces} for d,faces in cayd_faces.items()}
+    cay_vertices=np.asarray(Cay.vertices(),dtype=int)
+    cayd_vertices=np.asarray(Cayd.vertices(),dtype=int)
     zero_pairing=(cayd_vertices@cay_vertices.T==0)
     point_to_vertex_index=np.full(len(Cay.points()),-1,dtype=int)
     cay_vertex_point_indices=np.asarray(Cay.vertices(as_indices=True),dtype=int)
@@ -1347,7 +1347,7 @@ def h11_2_part_l_fast(Cay: Polytope, Cayd: Polytope, det: bool=False)->int:
         face_vertex_indices=point_to_vertex_index[face_point_indices]
         if np.any(face_vertex_indices<0):
             raise RuntimeError("A face vertex could not be matched to Cay.vertices().")
-        mask=np.all(zero_pairing[:, face_vertex_indices],axis=1)
+        mask=np.all(zero_pairing[:,face_vertex_indices],axis=1)
         dual_vertices=cayd_vertices[mask]
         if len(dual_vertices)==0:
             raise RuntimeError("The zero-pairing condition produced no dual vertices.")
@@ -1408,19 +1408,19 @@ def h11_2_part_l_fast(Cay: Polytope, Cayd: Polytope, det: bool=False)->int:
         nonzero_3faces+=1
     result=trivial_term+doubled_dual_facet_term+dual_codim2_term+edge_term+face_2_term+face_3_term
     if det:
-        print("Trivial term:                         ", trivial_term)
-        print("Doubled dual facets:                 ", doubled_dual_facet_term)
-        print("Dual codimension-2 faces:            ", dual_codim2_term)
-        print("1-face / doubled dual-face term:     ", edge_term)
-        print("2-face / dual-face term:             ", face_2_term)
-        print("3-face and subface correction term:  ", face_3_term)
-        print("Nonzero contributing edges:          ", nonzero_edges)
-        print("Nonzero contributing 2-faces:        ", nonzero_2faces)
-        print("Nonzero contributing 3-faces:        ", nonzero_3faces)
-        print("h11:                                  ", result)
+        print("Trivial term:                         ",trivial_term)
+        print("Doubled dual facets:                 ",doubled_dual_facet_term)
+        print("Dual codimension-2 faces:            ",dual_codim2_term)
+        print("1-face / doubled dual-face term:     ",edge_term)
+        print("2-face / dual-face term:             ",face_2_term)
+        print("3-face and subface correction term:  ",face_3_term)
+        print("Nonzero contributing edges:          ",nonzero_edges)
+        print("Nonzero contributing 2-faces:        ",nonzero_2faces)
+        print("Nonzero contributing 3-faces:        ",nonzero_3faces)
+        print("h11:                                  ",result)
     return int(result)
 
-def h21_2_part_fast(Cay: Polytope, Cayd: Polytope, det: bool=False)->int:
+def h21_2_part_fast(Cay: Polytope,Cayd: Polytope,det: bool=False)->int:
     """
     Fast implementation of h21_2_part.
     This is algebraically equivalent to
@@ -1458,23 +1458,23 @@ def h21_2_part_fast(Cay: Polytope, Cayd: Polytope, det: bool=False)->int:
     cay_faces_2=Cay.faces(2)
     cay_faces_3=Cay.faces(3)
     cay_faces_4=Cay.faces(4)
-    dual_dimensions={n-2, n-3, n-4}
-    cay_vertices=np.asarray(Cay.vertices(), dtype=np.int64)
-    cayd_vertices=np.asarray(Cayd.vertices(), dtype=np.int64)
+    dual_dimensions={n-2,n-3,n-4}
+    cay_vertices=np.asarray(Cay.vertices(),dtype=np.int64)
+    cayd_vertices=np.asarray(Cayd.vertices(),dtype=np.int64)
     zero_pairing=(cayd_vertices@cay_vertices.T==0)
-    cay_vertex_lookup={tuple(map(int, v)): i for i, v in enumerate(cay_vertices)}
+    cay_vertex_lookup={tuple(map(int,v)): i for i,v in enumerate(cay_vertices)}
 
     def vertex_key(vertices):
-        return tuple(sorted(tuple(map(int, row)) for row in np.asarray(vertices)))
+        return tuple(sorted(tuple(map(int,row)) for row in np.asarray(vertices)))
     cayd_lstar_lookup={d: {vertex_key(face.vertices()): len(face.labels_int) for face in Cayd.faces(d)} for d in dual_dimensions}
 
     def dual_face_key_and_lstar(face):
-        fv=np.asarray(face.vertices(), dtype=np.int64)
+        fv=np.asarray(face.vertices(),dtype=np.int64)
         try:
-            face_vertex_indices=np.fromiter((cay_vertex_lookup[tuple(map(int, v))] for v in fv), dtype=np.intp, count=len(fv))
+            face_vertex_indices=np.fromiter((cay_vertex_lookup[tuple(map(int,v))] for v in fv),dtype=np.intp,count=len(fv))
         except KeyError as exc:
             raise RuntimeError("A face vertex could not be matched to Cay.vertices().") from exc
-        mask=np.all(zero_pairing[:, face_vertex_indices], axis=1)
+        mask=np.all(zero_pairing[:,face_vertex_indices],axis=1)
         dual_vertices=cayd_vertices[mask]
         if len(dual_vertices)==0:
             raise RuntimeError("The zero-pairing condition produced no dual vertices.")
@@ -1489,7 +1489,7 @@ def h21_2_part_fast(Cay: Polytope, Cayd: Polytope, det: bool=False)->int:
     doubled_cayd=Polytope(2*cayd_vertices)
     doubled_cay_4_lstar={}
     for face in doubled_cay.faces(4):
-        doubled_vertices=np.asarray(face.vertices(), dtype=np.int64)
+        doubled_vertices=np.asarray(face.vertices(),dtype=np.int64)
         if np.any(doubled_vertices%2):
             raise RuntimeError("A vertex of 2*Cay was unexpectedly not divisible by 2.")
         original_key=vertex_key(doubled_vertices//2)
@@ -1497,7 +1497,7 @@ def h21_2_part_fast(Cay: Polytope, Cayd: Polytope, det: bool=False)->int:
     doubled_dual_dim=n-2
     doubled_cayd_lstar={}
     for face in doubled_cayd.faces(doubled_dual_dim):
-        doubled_vertices=np.asarray(face.vertices(), dtype=np.int64)
+        doubled_vertices=np.asarray(face.vertices(),dtype=np.int64)
         if np.any(doubled_vertices%2):
             raise RuntimeError("A vertex of 2*Cayd was unexpectedly not divisible by 2.")
         original_key=vertex_key(doubled_vertices//2)
@@ -1544,16 +1544,16 @@ def h21_2_part_fast(Cay: Polytope, Cayd: Polytope, det: bool=False)->int:
         nonzero_4faces+=1
     result=face_2_term+face_3_term+face_4_term
     if det:
-        print("2-face / doubled dual-face term:      ", face_2_term)
-        print("3-face subface correction term:       ", face_3_term)
-        print("4-face combined term:                  ", face_4_term)
-        print("Nonzero contributing 2-faces:          ", nonzero_2faces)
-        print("Nonzero contributing 3-faces:          ", nonzero_3faces)
-        print("Nonzero contributing 4-faces:          ", nonzero_4faces)
-        print("h21:                                     ", result)
+        print("2-face / doubled dual-face term:      ",face_2_term)
+        print("3-face subface correction term:       ",face_3_term)
+        print("4-face combined term:                  ",face_4_term)
+        print("Nonzero contributing 2-faces:          ",nonzero_2faces)
+        print("Nonzero contributing 3-faces:          ",nonzero_3faces)
+        print("Nonzero contributing 4-faces:          ",nonzero_4faces)
+        print("h21:                                     ",result)
     return int(result)
 
-def count_interior_lattice_points_hrep(A, b, count_bin="count",latte_options=("--redundancy-check=none",)):
+def count_interior_lattice_points_hrep(A,b,count_bin="count",latte_options=("--redundancy-check=none",)):
     """
     Count interior lattice points of
         P = {x : A x <= b}
@@ -1561,11 +1561,11 @@ def count_interior_lattice_points_hrep(A, b, count_bin="count",latte_options=("-
     Interior lattice points satisfy
         A x <= b - 1.
     """
-    A=np.asarray(A, dtype=object)
-    b=np.asarray(b, dtype=object)
-    return count_lattice_points_hrep(A, b-1,count_bin=count_bin,latte_options=latte_options)
+    A=np.asarray(A,dtype=object)
+    b=np.asarray(b,dtype=object)
+    return count_lattice_points_hrep(A,b-1,count_bin=count_bin,latte_options=latte_options)
 
-def parse_latte_output(stdout, stderr=""):
+def parse_latte_output(stdout,stderr=""):
     """
     Robustly parse LattE's output.
     In LattE integrale 1.7.6, stdout is often simply
@@ -1573,7 +1573,7 @@ def parse_latte_output(stdout, stderr=""):
     while stderr contains all diagnostic information.
     """
     stdout_clean=stdout.strip()
-    if re.fullmatch(r"[+-]?\d+", stdout_clean):
+    if re.fullmatch(r"[+-]?\d+",stdout_clean):
         return int(stdout_clean)
     output=stdout+"\n"+stderr
     m=re.search(r"Total number of lattice points(?:\s+is)?\s*:?\s*([+-]?\d+)",output)
@@ -1585,13 +1585,13 @@ def parse_latte_output(stdout, stderr=""):
     candidates=[]
     for line in stdout.splitlines():
         line=line.strip()
-        if re.fullmatch(r"[+-]?\d+", line):
+        if re.fullmatch(r"[+-]?\d+",line):
             candidates.append(int(line))
     if candidates:
         return candidates[-1]
     raise RuntimeError(f"Could not parse LattE output.\n\nSTDOUT:\n{stdout}\n\nSTDERR:\n{stderr}")
 
-def count_lattice_points_hrep(A, b, count_bin="count",latte_options=("--redundancy-check=none",),linearity_rows=None,keep_file=False,filename="polytope.hrep.latte"):
+def count_lattice_points_hrep(A,b,count_bin="count",latte_options=("--redundancy-check=none",),linearity_rows=None,keep_file=False,filename="polytope.hrep.latte"):
     """
     Count lattice points in
         P = {x in Z^d : A x <= b}
@@ -1621,22 +1621,22 @@ def count_lattice_points_hrep(A, b, count_bin="count",latte_options=("--redundan
         raise FileNotFoundError(f"Could not find LattE executable '{count_bin}'. Use command-v count in the shell, or pass the full path as count_bin.")
     if keep_file:
         hrep_file=Path(filename)
-        write_latte_hrep(A, b, hrep_file, linearity_rows=linearity_rows)
-        cmd=[count_bin,*latte_options, str(hrep_file)]
+        write_latte_hrep(A,b,hrep_file,linearity_rows=linearity_rows)
+        cmd=[count_bin,*latte_options,str(hrep_file)]
         proc=subprocess.run(cmd,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,)
         if proc.returncode!=0:
             raise RuntimeError(f"LattE failed.\nCommand: {' '.join(cmd)}\n\nSTDOUT:\n{proc.stdout}\n\nSTDERR:\n{proc.stderr}")
-        return parse_latte_output(proc.stdout, proc.stderr)
+        return parse_latte_output(proc.stdout,proc.stderr)
     with tempfile.TemporaryDirectory() as tmpdir:
         hrep_file=Path(tmpdir)/"polytope.hrep.latte"
-        write_latte_hrep(A, b, hrep_file, linearity_rows=linearity_rows)
-        cmd=[count_bin,*latte_options, str(hrep_file)]
+        write_latte_hrep(A,b,hrep_file,linearity_rows=linearity_rows)
+        cmd=[count_bin,*latte_options,str(hrep_file)]
         proc=subprocess.run(cmd,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,)
         if proc.returncode!=0:
             raise RuntimeError("LattE failed.\n"f"Command: {' '.join(cmd)}\n\nSTDOUT:\n{proc.stdout}\n\nSTDERR:\n{proc.stderr}")
-        return parse_latte_output(proc.stdout, proc.stderr)
+        return parse_latte_output(proc.stdout,proc.stderr)
 
-def write_latte_hrep(A, b, filename, linearity_rows=None):
+def write_latte_hrep(A,b,filename,linearity_rows=None):
     """
     Write the H-representation
         A x <= b
@@ -1655,8 +1655,8 @@ def write_latte_hrep(A, b, filename, linearity_rows=None):
         optional list of 1-indexed row numbers that should be treated
         as equalities by LattE. Usually leave as None.
     """
-    A=np.asarray(A, dtype=object)
-    b=np.asarray(b, dtype=object)
+    A=np.asarray(A,dtype=object)
+    b=np.asarray(b,dtype=object)
     if A.ndim!=2:
         raise ValueError("A must be a 2D array.")
     if b.ndim!=1:
@@ -1664,20 +1664,20 @@ def write_latte_hrep(A, b, filename, linearity_rows=None):
     if A.shape[0]!=b.shape[0]:
         raise ValueError("A and b have incompatible shapes.")
     n_ineqs, dim=A.shape
-    with open(filename, "w") as f:
+    with open(filename,"w") as f:
         f.write(f"{n_ineqs} {dim+1}\n")
-        for Ai, bi in zip(A, b):
+        for Ai, bi in zip(A,b):
             row=[int(bi)]+[-int(x) for x in Ai]
-            f.write(" ".join(map(str, row))+"\n")
+            f.write(" ".join(map(str,row))+"\n")
         if linearity_rows is not None and len(linearity_rows)>0:
-            linearity_rows=list(map(int, linearity_rows))
-            f.write("linearity "+str(len(linearity_rows))+" "+" ".join(map(str, linearity_rows))+"\n")
+            linearity_rows=list(map(int,linearity_rows))
+            f.write("linearity "+str(len(linearity_rows))+" "+" ".join(map(str,linearity_rows))+"\n")
 
 def count_interior_lattice_points_vrep(vertices,backend='ppl',count_bin="count",latte_options=("--redundancy-check=none",)):
     out=poly_v_to_h(vertices,backend=backend)[0]
     A=out[:,:-1]
     b=out[:,-1]
-    return count_interior_lattice_points_hrep(A, b, count_bin=count_bin,latte_options=latte_options)
+    return count_interior_lattice_points_hrep(A,b,count_bin=count_bin,latte_options=latte_options)
 
 def count_lattice_points_vrep(vertices,count_bin="count",latte_options=("--redundancy-check=none",),keep_file=False,filename="polytope.vrep.latte",):
     """
@@ -1688,25 +1688,25 @@ def count_lattice_points_vrep(vertices,count_bin="count",latte_options=("--redun
     int
         Number of lattice points in P, including the boundary.
     """
-    vertices=np.asarray(vertices, dtype=object)
+    vertices=np.asarray(vertices,dtype=object)
     if shutil.which(count_bin) is None and not Path(count_bin).exists():
         raise FileNotFoundError(f"Could not find LattE executable '{count_bin}'. Use `command -v count` in the shell, or pass the full path as count_bin.")
     if keep_file:
         vrep_file=Path(filename)
-        write_latte_vrep(vertices, vrep_file)
+        write_latte_vrep(vertices,vrep_file)
         cmd=[count_bin,"--vrep",*latte_options,str(vrep_file),]
         proc=subprocess.run(cmd,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,)
         if proc.returncode!=0:
             raise RuntimeError("LattE failed.\n"f"Command: {' '.join(cmd)}\n\n"f"STDOUT:\n{proc.stdout}\n\n"f"STDERR:\n{proc.stderr}")
-        return parse_latte_output(proc.stdout, proc.stderr)
+        return parse_latte_output(proc.stdout,proc.stderr)
     with tempfile.TemporaryDirectory() as tmpdir:
         vrep_file=Path(tmpdir)/"polytope.vrep.latte"
-        write_latte_vrep(vertices, vrep_file)
+        write_latte_vrep(vertices,vrep_file)
         cmd=[count_bin,"--vrep",*latte_options,str(vrep_file),]
         proc=subprocess.run(cmd,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,)
         if proc.returncode!=0:
             raise RuntimeError("LattE failed.\n"f"Command: {' '.join(cmd)}\n\n"f"STDOUT:\n{proc.stdout}\n\n"f"STDERR:\n{proc.stderr}")
-        return parse_latte_output(proc.stdout, proc.stderr)
+        return parse_latte_output(proc.stdout,proc.stderr)
 
 def count_interior_lattice_points_vrep_ehrhart(vertices,count_bin="count",latte_options=("--redundancy-check=none",),keep_file=False,filename="polytope.vrep.latte",):
     """
@@ -1715,7 +1715,7 @@ def count_interior_lattice_points_vrep_ehrhart(vertices,count_bin="count",latte_
     If L_P(t) = #(tP ∩ Z^d),
     then #(int(P) ∩ Z^d) = (-1)^d L_P(-1).
     """
-    vertices=np.asarray(vertices, dtype=object)
+    vertices=np.asarray(vertices,dtype=object)
     if vertices.ndim!=2:
         raise ValueError("vertices must be a 2D array.")
     dim=vertices.shape[1]
@@ -1723,7 +1723,7 @@ def count_interior_lattice_points_vrep_ehrhart(vertices,count_bin="count",latte_
         raise FileNotFoundError(f"Could not find LattE executable '{count_bin}'.")
 
     def run(vrep_file):
-        write_latte_vrep(vertices, vrep_file)
+        write_latte_vrep(vertices,vrep_file)
         cmd=[count_bin,"--ehrhart-polynomial","--vrep",*latte_options,str(vrep_file),]
         proc=subprocess.run(cmd,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,)
         if proc.returncode!=0:
@@ -1745,28 +1745,28 @@ def _extract_latte_ehrhart_polynomial(stdout):
     """
     lines=[line.strip() for line in stdout.splitlines() if line.strip()]
     for line in reversed(lines):
-        if re.search(r"\bt(?:\^?\d+)?\b", line):
+        if re.search(r"\bt(?:\^?\d+)?\b",line):
             return line
     for line in reversed(lines):
-        if re.fullmatch(r"[+-]?\d+(?:/\d+)?", line):
+        if re.fullmatch(r"[+-]?\d+(?:/\d+)?",line):
             return line
     raise RuntimeError("Could not extract Ehrhart polynomial from LattE output.\n\n"f"STDOUT:\n{stdout}")
 
-def _evaluate_latte_polynomial(poly, x):
+def _evaluate_latte_polynomial(poly,x):
     """
     Evaluate a univariate LattE Ehrhart polynomial exactly.
     """
-    poly=poly.replace(" ", "")
-    poly=poly.replace("*", "")
-    poly=poly.replace("T", "t")
-    if not poly.startswith(("+", "-")):
+    poly=poly.replace(" ","")
+    poly=poly.replace("*","")
+    poly=poly.replace("T","t")
+    if not poly.startswith(("+","-")):
         poly="+"+poly
-    terms=re.findall(r"([+-])([^+-]+)", poly)
+    terms=re.findall(r"([+-])([^+-]+)",poly)
     value=Fraction(0)
     for sign, term in terms:
         sgn=1 if sign=="+" else-1
         if "t" in term:
-            coeff_part, power_part=term.split("t", 1)
+            coeff_part, power_part=term.split("t",1)
             if coeff_part=="":
                 coeff=Fraction(1)
             else:
@@ -1784,10 +1784,10 @@ def _evaluate_latte_polynomial(poly, x):
     return value
 
 def Cayley_N(F):
-    return Polytope(np.concatenate((np.column_stack([F.pol_W_N().points(), np.ones(len(F.pol_W_N().points()), dtype=int), np.zeros(len(F.pol_W_N().points()), dtype=int)]),np.column_stack([F.pol_B_N().points(), np.zeros(len(F.pol_B_N().points()), dtype=int), np.ones(len(F.pol_B_N().points()), dtype=int)])), axis=0))
+    return Polytope(np.concatenate((np.column_stack([F.pol_W_N().points(),np.ones(len(F.pol_W_N().points()),dtype=int),np.zeros(len(F.pol_W_N().points()),dtype=int)]),np.column_stack([F.pol_B_N().points(),np.zeros(len(F.pol_B_N().points()),dtype=int),np.ones(len(F.pol_B_N().points()),dtype=int)])),axis=0))
 
 def Cayley_M(F):
-    return Polytope(np.concatenate((np.column_stack([F.pol_W_M().points(), np.ones(len(F.pol_W_M().points()), dtype=int), np.zeros(len(F.pol_W_M().points()), dtype=int)]),np.column_stack([F.pol_B_M().points(), np.zeros(len(F.pol_B_M().points()), dtype=int), np.ones(len(F.pol_B_M().points()), dtype=int)])), axis=0))
+    return Polytope(np.concatenate((np.column_stack([F.pol_W_M().points(),np.ones(len(F.pol_W_M().points()),dtype=int),np.zeros(len(F.pol_W_M().points()),dtype=int)]),np.column_stack([F.pol_B_M().points(),np.zeros(len(F.pol_B_M().points()),dtype=int),np.ones(len(F.pol_B_M().points()),dtype=int)])),axis=0))
 """Batyrev--Nill stringy E-functions for Gorenstein support polytopes.
 Specialized to reflexive Gorenstein Cayley cones.  The primary entry point
 accepts an already-computed Cayley support P, its cone C, the dual cone C_dual,
@@ -1816,9 +1816,9 @@ Ehrhart polynomial per nontrivial face instead of enumerating every dilation
 separately.  Cache the returned result (or the FaceLattice objects) for large
 examples.
 """
-Poly1=Tuple[int, ...] 
-Laurent2=Dict[Tuple[int, int], int]
-_HSTAR_CACHE: Dict[Tuple[int, Tuple[Tuple[int, ...], ...]], Poly1]={}
+Poly1=Tuple[int,...] 
+Laurent2=Dict[Tuple[int,int],int]
+_HSTAR_CACHE: Dict[Tuple[int,Tuple[Tuple[int,...],...]],Poly1]={}
 
 def clear_hstar_cache()->None:
     """Clear the process-wide exact h* cache used across repeated notebook runs."""
@@ -1829,18 +1829,18 @@ def hstar_cache_size()->int:
     return len(_HSTAR_CACHE)
 
 def _trim(a: Iterable[int])->Poly1:
-    z=list(map(int, a))
+    z=list(map(int,a))
     while len(z)>1 and z[-1]==0:
         z.pop()
     return tuple(z or [0])
 
-def _add(a: Poly1, b: Poly1)->Poly1:
-    return _trim((a[i] if i<len(a) else 0)+(b[i] if i<len(b) else 0) for i in range(max(len(a), len(b))))
+def _add(a: Poly1,b: Poly1)->Poly1:
+    return _trim((a[i] if i<len(a) else 0)+(b[i] if i<len(b) else 0) for i in range(max(len(a),len(b))))
 
-def _scale(a: Poly1, c: int)->Poly1:
+def _scale(a: Poly1,c: int)->Poly1:
     return _trim(c*x for x in a)
 
-def _mul(a: Poly1, b: Poly1)->Poly1:
+def _mul(a: Poly1,b: Poly1)->Poly1:
     z=[0]*(len(a)+len(b)-1)
     for i, x in enumerate(a):
         for j, y in enumerate(b):
@@ -1848,15 +1848,15 @@ def _mul(a: Poly1, b: Poly1)->Poly1:
     return _trim(z)
 
 def _t_minus_one_pow(k: int)->Poly1:
-    return tuple(comb(k, i)*(-1)**(k-i) for i in range(k+1))
+    return tuple(comb(k,i)*(-1)**(k-i) for i in range(k+1))
 
-def _h_star_from_counts(counts: Sequence[int], d: int)->Poly1:
+def _h_star_from_counts(counts: Sequence[int],d: int)->Poly1:
     """Recover h* from L_P(0),...,L_P(d) exactly."""
     if len(counts)<d+1:
         raise ValueError(f"need at least {d+1} Ehrhart values")
-    return _trim(sum((-1)**(j-i)*comb(d+1, j-i)*int(counts[i]) for i in range(j+1)) for j in range(d+1))
+    return _trim(sum((-1)**(j-i)*comb(d+1,j-i)*int(counts[i]) for i in range(j+1)) for j in range(d+1))
 
-def write_latte_vrep(vertices: Any, filename: Any)->None:
+def write_latte_vrep(vertices: Any,filename: Any)->None:
     """Write integral vertices in LattE's native homogenized V-representation.
     Each vertex ``v`` is written as ``1 v_1 ... v_d``.  Native LattE V-input
     must be full-dimensional in the supplied coordinates; lower-dimensional
@@ -1865,12 +1865,12 @@ def write_latte_vrep(vertices: Any, filename: Any)->None:
     """
     vertices=_integer_points(vertices)
     n_vertices, dim=vertices.shape
-    with open(filename, "w", encoding="utf-8") as stream:
+    with open(filename,"w",encoding="utf-8") as stream:
         stream.write(f"{n_vertices} {dim+1}\n")
         for row in vertices:
-            stream.write("1 "+" ".join(map(str, map(int, row)))+"\n")
+            stream.write("1 "+" ".join(map(str,map(int,row)))+"\n")
 
-def _intrinsic_lattice_vertices(vertices: Any, d: int)->np.ndarray:
+def _intrinsic_lattice_vertices(vertices: Any,d: int)->np.ndarray:
     """Put a d-dimensional lattice face into full-dimensional Z^d coordinates.
     LattE's native V-representation does not handle a polytope that is
     lower-dimensional in its supplied ambient coordinates.  CYTools already
@@ -1882,25 +1882,25 @@ def _intrinsic_lattice_vertices(vertices: Any, d: int)->np.ndarray:
     if d<0:
         raise ValueError("intrinsic dimension must be nonnegative")
     if d==0:
-        return np.zeros((len(verts), 0), dtype=np.int64)
+        return np.zeros((len(verts),0),dtype=np.int64)
     if d>verts.shape[1]:
         raise ValueError("intrinsic dimension exceeds ambient dimension")
-    translated=np.asarray(verts-verts[0], dtype=np.int64)
+    translated=np.asarray(verts-verts[0],dtype=np.int64)
     if d==verts.shape[1] and _affine_dim(translated)==d:
         return translated
     try:
         from cytools.utils import lll_reduce
     except ImportError as e:
         raise ImportError("lower-dimensional LattE V-input requires cytools.utils.lll_reduce") from e
-    reduced=np.asarray(lll_reduce(translated), dtype=np.int64)
+    reduced=np.asarray(lll_reduce(translated),dtype=np.int64)
     if reduced.ndim!=2 or reduced.shape!=translated.shape:
         raise RuntimeError("CYTools lll_reduce returned an unexpected shape")
-    intrinsic=reduced[:, reduced.shape[1]-d :]
+    intrinsic=reduced[:,reduced.shape[1]-d :]
     if intrinsic.shape[1]!=d or _affine_dim(intrinsic)!=d:
         raise RuntimeError("failed to obtain full-dimensional intrinsic lattice coordinates")
-    return np.unique(intrinsic, axis=0)
+    return np.unique(intrinsic,axis=0)
 
-def _cytools_work_is_small(vertices: np.ndarray, d: int, cutoff: int)->bool:
+def _cytools_work_is_small(vertices: np.ndarray,d: int,cutoff: int)->bool:
     """
     Cheap upper-bound proxy for the total lattice-point enumeration problem
     CYTools faces when computing L_P(1), ..., L_P(d).
@@ -1910,9 +1910,9 @@ def _cytools_work_is_small(vertices: np.ndarray, d: int, cutoff: int)->bool:
     """
     if d<=0:
         return True
-    widths=[int(w) for w in np.ptp(vertices, axis=0)]
+    widths=[int(w) for w in np.ptp(vertices,axis=0)]
     total=0
-    for k in range(1, d+1):
+    for k in range(1,d+1):
         box_points=1
         for w in widths:
             box_points*=k*w+1
@@ -1923,29 +1923,29 @@ def _cytools_work_is_small(vertices: np.ndarray, d: int, cutoff: int)->bool:
             return False
     return True
 
-def _parse_latte_ehrhart_polynomial(stdout: str, d: int)->Tuple[Fraction, ...]:
+def _parse_latte_ehrhart_polynomial(stdout: str,d: int)->Tuple[Fraction,...]:
     """Parse LattE's exact univariate Ehrhart polynomial into coefficients.
     LattE normally prints, for example,
         + 1 * t^0 + 10/3 * t^1 + 8 * t^2 + 20/3 * t^3
     The returned tuple is ``(c_0,...,c_d)`` for ``sum c_i t^i``.
     """
     lines=[line.strip() for line in stdout.splitlines() if line.strip()]
-    candidates=[line for line in lines if re.search(r"\bt(?:\s*\^\s*\d+)?\b", line)]
+    candidates=[line for line in lines if re.search(r"\bt(?:\s*\^\s*\d+)?\b",line)]
     if not candidates:
         raise RuntimeError(f"could not find an Ehrhart polynomial in LattE output\n\nSTDOUT:\n{stdout}")
-    expr=candidates[-1].replace("T", "t")
-    if not expr.startswith(("+", "-")):
+    expr=candidates[-1].replace("T","t")
+    if not expr.startswith(("+","-")):
         expr="+"+expr
-    terms=re.findall(r"([+-])\s*([^+-]+)", expr)
+    terms=re.findall(r"([+-])\s*([^+-]+)",expr)
     coeffs=[Fraction(0) for _ in range(d+1)]
     seen=False
     for sign, body in terms:
-        body=re.sub(r"\s+", "", body)
+        body=re.sub(r"\s+","",body)
         if not body:
             continue
         sgn=1 if sign=="+" else-1
         if "t" in body:
-            m=re.fullmatch(r"(?:(\d+(?:/\d+)?)\*?)?t(?:\^(\d+))?", body,)
+            m=re.fullmatch(r"(?:(\d+(?:/\d+)?)\*?)?t(?:\^(\d+))?",body,)
             if m is None:
                 continue
             coefficient=Fraction(m.group(1) or "1")*sgn
@@ -1968,17 +1968,17 @@ def _parse_latte_ehrhart_polynomial(stdout: str, d: int)->Tuple[Fraction, ...]:
         raise RuntimeError(f"LattE returned a polynomial of degree below face dimension {d}: {expr}")
     return tuple(coeffs)
 
-def _ehrhart_values_from_coefficients(coefficients: Sequence[Fraction], d: int)->Tuple[int, ...]:
+def _ehrhart_values_from_coefficients(coefficients: Sequence[Fraction],d: int)->Tuple[int,...]:
     """Evaluate an exact Ehrhart polynomial at 0,...,d."""
     values: List[int]=[]
     for k in range(d+1):
-        value=sum(c*(k**j) for j, c in enumerate(coefficients))
+        value=sum(c*(k**j) for j,c in enumerate(coefficients))
         if value.denominator!=1:
             raise RuntimeError(f"Ehrhart polynomial evaluated non-integrally at k={k}: {value}")
         values.append(int(value))
     return tuple(values)
 
-def ehrhart_polynomial_latte_vrep(vertices: Any,*, intrinsic_dim: Optional[int]=None, count_bin: str="count", latte_options: Sequence[str]=("--redundancy-check=none",),)->Tuple[Fraction, ...]:
+def ehrhart_polynomial_latte_vrep(vertices: Any,*,intrinsic_dim: Optional[int]=None,count_bin: str="count",latte_options: Sequence[str]=("--redundancy-check=none",),)->Tuple[Fraction,...]:
     """Compute an exact Ehrhart polynomial with LattE from vertex data.
     Returns coefficients ``(c_0,...,c_d)`` of ``L_P(t)``.  If the vertices are
     embedded in a larger ambient lattice (as every proper face of a support
@@ -1996,41 +1996,41 @@ def ehrhart_polynomial_latte_vrep(vertices: Any,*, intrinsic_dim: Optional[int]=
         executable=str(Path(count_bin).resolve())
     if executable is None:
         raise FileNotFoundError(f"Could not find LattE executable {count_bin!r}. Pass its full path " "as count_bin or put 'count' on PATH.")
-    intrinsic=_intrinsic_lattice_vertices(verts, d)
+    intrinsic=_intrinsic_lattice_vertices(verts,d)
     with tempfile.TemporaryDirectory(prefix="stringy_e_latte_") as tmp:
         path=Path(tmp)/"face.vrep.latte"
-        write_latte_vrep(intrinsic, path)
-        cmd=[executable, "--vrep", "--ehrhart-polynomial",*tuple(latte_options), str(path),]
-        process=subprocess.run(cmd, cwd=tmp, capture_output=True, text=True, check=False,)
+        write_latte_vrep(intrinsic,path)
+        cmd=[executable,"--vrep","--ehrhart-polynomial",*tuple(latte_options),str(path),]
+        process=subprocess.run(cmd,cwd=tmp,capture_output=True,text=True,check=False,)
         if process.returncode!=0:
             raise RuntimeError("LattE failed to compute an Ehrhart polynomial.\n" f"Command: {' '.join(cmd)}\n\n" f"STDOUT:\n{process.stdout}\n\nSTDERR:\n{process.stderr}")
-        return _parse_latte_ehrhart_polynomial(process.stdout, d)
+        return _parse_latte_ehrhart_polynomial(process.stdout,d)
 
 def _integer_points(a: Any)->np.ndarray:
     """Extract integer vertices/points from an array or CYTools-like object."""
-    if isinstance(a, np.ndarray) or isinstance(a, (list, tuple)):
+    if isinstance(a,np.ndarray) or isinstance(a,(list,tuple)):
         x=np.asarray(a)
-    elif hasattr(a, "vertices"):
+    elif hasattr(a,"vertices"):
         x=np.asarray(a.vertices())
     else:
         raise TypeError("expected an integer array or a CYTools Polytope-like object")
     if x.ndim!=2 or len(x)==0:
         raise ValueError("points must be a nonempty two-dimensional array")
-    if not np.all(np.equal(x, np.rint(x))):
+    if not np.all(np.equal(x,np.rint(x))):
         raise ValueError("all coordinates must be integers")
-    return np.asarray(x, dtype=object).astype(np.int64)
+    return np.asarray(x,dtype=object).astype(np.int64)
 
-def _integer_vector(a: Any,*, name: str, length: Optional[int]=None)->np.ndarray:
+def _integer_vector(a: Any,*,name: str,length: Optional[int]=None)->np.ndarray:
     x=np.asarray(a)
     if x.ndim!=1:
         raise ValueError(f"{name} must be a one-dimensional vector")
     if length is not None and len(x)!=length:
         raise ValueError(f"{name} must have length {length}")
-    if not np.all(np.equal(x, np.rint(x))):
+    if not np.all(np.equal(x,np.rint(x))):
         raise ValueError(f"{name} must be integral")
-    return np.asarray(x, dtype=object).astype(np.int64)
+    return np.asarray(x,dtype=object).astype(np.int64)
 
-def cayley_support(delta1: Any, delta2: Any,*, as_cytools: bool=False, backend: Optional[str]=None)->Any:
+def cayley_support(delta1: Any,delta2: Any,*,as_cytools: bool=False,backend: Optional[str]=None)->Any:
     """Return conv((Delta1,1,0) union (Delta2,0,1)).
     ``delta1`` and ``delta2`` must use the same lattice coordinates (normally
     six columns).  By default an integer NumPy array is returned; request a
@@ -2039,9 +2039,9 @@ def cayley_support(delta1: Any, delta2: Any,*, as_cytools: bool=False, backend: 
     a, b=_integer_points(delta1), _integer_points(delta2)
     if a.shape[1]!=b.shape[1]:
         raise ValueError("Delta_1 and Delta_2 must have the same ambient dimension")
-    ca=np.hstack((a, np.tile([[1, 0]], (len(a), 1))))
-    cb=np.hstack((b, np.tile([[0, 1]], (len(b), 1))))
-    out=np.unique(np.vstack((ca, cb)), axis=0)
+    ca=np.hstack((a,np.tile([[1,0]],(len(a),1))))
+    cb=np.hstack((b,np.tile([[0,1]],(len(b),1))))
+    out=np.unique(np.vstack((ca,cb)),axis=0)
     if not as_cytools:
         return out
     try:
@@ -2050,20 +2050,20 @@ def cayley_support(delta1: Any, delta2: Any,*, as_cytools: bool=False, backend: 
         raise ImportError("CYTools is required for as_cytools=True") from e
     return Polytope(out,**({"backend": backend} if backend else {}))
 
-def cayley_support_2part(delta1: Any, delta2: Any,**kwargs: Any)->Any:
+def cayley_support_2part(delta1: Any,delta2: Any,**kwargs: Any)->Any:
     """Descriptive alias for :func:`cayley_support`."""
-    return cayley_support(delta1, delta2,**kwargs)
+    return cayley_support(delta1,delta2,**kwargs)
 
 def _primitive_rows(rays: Any)->np.ndarray:
     """Primitive, unique integral ray generators, with their signs preserved."""
     r=_integer_points(rays)
-    if np.any(np.all(r==0, axis=1)):
+    if np.any(np.all(r==0,axis=1)):
         raise ValueError("a cone ray cannot be zero")
     out=[]
     for row in r:
         g=int(np.gcd.reduce(np.abs(row)))
-        out.append(tuple(map(int, row//g)))
-    return np.asarray(sorted(set(out)), dtype=np.int64)
+        out.append(tuple(map(int,row//g)))
+    return np.asarray(sorted(set(out)),dtype=np.int64)
 
 @dataclass
 class CayleyGorensteinData:
@@ -2093,7 +2093,7 @@ class GorensteinConeData:
     degree_C_dual: np.ndarray
     index: int
 
-def cayley_gorenstein_data(delta1: Any, delta2: Any,*, interior_point: Optional[Sequence[int]]=None, poly_backend: Optional[str]=None, check: bool=True,)->CayleyGorensteinData:
+def cayley_gorenstein_data(delta1: Any,delta2: Any,*,interior_point: Optional[Sequence[int]]=None,poly_backend: Optional[str]=None,check: bool=True,)->CayleyGorensteinData:
     """Build primal/dual cones and degree-one supports using CYTools only.
     CYTools performs cone dualization lazily; the expensive conversion from the
     dual H-representation to rays occurs at ``dual_cone.rays()``.  For a
@@ -2109,13 +2109,13 @@ def cayley_gorenstein_data(delta1: Any, delta2: Any,*, interior_point: Optional[
         raise ImportError("cayley_gorenstein_data requires CYTools") from e
 
     def cy_poly(obj: Any)->Any:
-        if hasattr(obj, "vertices") and hasattr(obj, "faces"):
+        if hasattr(obj,"vertices") and hasattr(obj,"faces"):
             return obj
         kw={"backend": poly_backend} if poly_backend else {}
         return Polytope(_integer_points(obj),**kw)
     poly1, poly2=cy_poly(delta1), cy_poly(delta2)
     d1, d2=_integer_points(poly1), _integer_points(poly2)
-    primal_vertices=cayley_support(d1, d2)
+    primal_vertices=cayley_support(d1,d2)
     base_dim=d1.shape[1]
     if d2.shape[1]!=base_dim:
         raise ValueError("Delta_1 and Delta_2 must have the same ambient dimension")
@@ -2124,39 +2124,39 @@ def cayley_gorenstein_data(delta1: Any, delta2: Any,*, interior_point: Optional[
         raise ValueError("Delta_1 + Delta_2 is not full-dimensional in the base lattice")
     if interior_point is None:
         if minkowski_sum.is_reflexive():
-            p0=np.zeros(base_dim, dtype=np.int64)
+            p0=np.zeros(base_dim,dtype=np.int64)
         else:
-            interior=np.asarray(minkowski_sum.interior_points(), dtype=np.int64)
+            interior=np.asarray(minkowski_sum.interior_points(),dtype=np.int64)
             if interior.ndim!=2:
-                interior=interior.reshape((-1, base_dim))
+                interior=interior.reshape((-1,base_dim))
             if len(interior)!=1:
-                same=np.array_equal(np.asarray(sorted(map(tuple, d1))), np.asarray(sorted(map(tuple, d2))),)
+                same=np.array_equal(np.asarray(sorted(map(tuple,d1))),np.asarray(sorted(map(tuple,d2))),)
                 hint=(" The two inputs are identical; stringy_e_cayley expects the " "two Cayley summands, not a primal/dual pair or two copies of " "the anticanonical polytope." if same else "")
                 raise ValueError("Delta_1 + Delta_2 must have exactly one interior lattice " f"point, but CYTools found {len(interior)}.{hint}")
             p0=interior[0]
     else:
         p0=np.asarray(interior_point)
-    if p0.shape!=(base_dim,) or not np.all(np.equal(p0, np.rint(p0))):
+    if p0.shape!=(base_dim,) or not np.all(np.equal(p0,np.rint(p0))):
         raise ValueError(f"interior_point must be an integral vector of length {base_dim}")
     if check:
-        centered_sum=Polytope(_integer_points(minkowski_sum)-np.asarray(p0, dtype=np.int64),**({"backend": poly_backend} if poly_backend else {}),)
+        centered_sum=Polytope(_integer_points(minkowski_sum)-np.asarray(p0,dtype=np.int64),**({"backend": poly_backend} if poly_backend else {}),)
         if not centered_sum.is_reflexive():
             raise ValueError("Delta_1 + Delta_2, translated by its interior point, is not " "reflexive; the inputs do not define the required Gorenstein " "Cayley construction")
-    degree=np.concatenate((np.asarray(p0, dtype=np.int64), [1, 1]))
-    primal_cone=Cone(rays=primal_vertices, check=check)
+    degree=np.concatenate((np.asarray(p0,dtype=np.int64),[1,1]))
+    primal_cone=Cone(rays=primal_vertices,check=check)
     dual_cone=primal_cone.dual_cone()
     dual_vertices=_primitive_rows(dual_cone.extremal_rays())
     pair=primal_vertices@dual_vertices.T
     for j in range(pair.shape[1]):
-        if np.all(pair[:, j]<=0) and np.any(pair[:, j]<0):
+        if np.all(pair[:,j]<=0) and np.any(pair[:,j]<0):
             dual_vertices[j]*=-1
-            pair[:, j]*=-1
+            pair[:,j]*=-1
     if np.any(pair<0):
-        i, j=map(int, np.argwhere(pair<0)[0])
-        raise RuntimeError("CYTools cone dualization returned an invalid ray orientation: " f"<primal_ray[{i}], dual_ray[{j}]> = {int(pair[i, j])}")
+        i, j=map(int,np.argwhere(pair<0)[0])
+        raise RuntimeError("CYTools cone dualization returned an invalid ray orientation: " f"<primal_ray[{i}], dual_ray[{j}]> = {int(pair[i,j])}")
     degrees=dual_vertices@degree
     if np.any(degrees!=1):
-        values=sorted(set(map(int, degrees)))
+        values=sorted(set(map(int,degrees)))
         raise ValueError("the dual cone is not Gorenstein for degree " f"{degree.tolist()}; dual-ray degrees are {values}")
     kw={"backend": poly_backend} if poly_backend else {}
     primal_support=Polytope(primal_vertices,**kw)
@@ -2169,15 +2169,15 @@ def cayley_gorenstein_data(delta1: Any, delta2: Any,*, interior_point: Optional[
             raise ValueError(f"primal support must have affine dimension {expected_dim}")
         if int(dual_support.dimension())!=expected_dim:
             raise ValueError(f"dual support must have affine dimension {expected_dim}")
-        if np.any(~np.any(pair==0, axis=0)) or np.any(~np.any(pair==0, axis=1)):
+        if np.any(~np.any(pair==0,axis=0)) or np.any(~np.any(pair==0,axis=1)):
             raise ValueError("some support vertex lies on no dual facet")
-    return CayleyGorensteinData(primal_cone=primal_cone, dual_cone=dual_cone, primal_support=primal_support, dual_support=dual_support, primal_vertices=primal_vertices, dual_vertices=dual_vertices, degree=degree,)
+    return CayleyGorensteinData(primal_cone=primal_cone,dual_cone=dual_cone,primal_support=primal_support,dual_support=dual_support,primal_vertices=primal_vertices,dual_vertices=dual_vertices,degree=degree,)
 
-def dual_support_vertices_cytools(delta1: Any, delta2: Any,*, interior_point: Optional[Sequence[int]]=None, check: bool=True,)->np.ndarray:
+def dual_support_vertices_cytools(delta1: Any,delta2: Any,*,interior_point: Optional[Sequence[int]]=None,check: bool=True,)->np.ndarray:
     """Fast CYTools computation of dual degree-one support vertices."""
-    return cayley_gorenstein_data(delta1, delta2, interior_point=interior_point, check=check).dual_vertices
+    return cayley_gorenstein_data(delta1,delta2,interior_point=interior_point,check=check).dual_vertices
 
-def validate_gorenstein_cone_data(P: Any, C: Any, C_dual: Any, degree_C: Any, degree_C_dual: Any,*, pairing: Optional[np.ndarray]=None, expected_index: Optional[int]=None, poly_backend: Optional[str]=None, check: bool=True,)->GorensteinConeData:
+def validate_gorenstein_cone_data(P: Any,C: Any,C_dual: Any,degree_C: Any,degree_C_dual: Any,*,pairing: Optional[np.ndarray]=None,expected_index: Optional[int]=None,poly_backend: Optional[str]=None,check: bool=True,)->GorensteinConeData:
     """Validate precomputed cone data and construct the dual support polytope.
     Convention: ``degree_C`` grades ``C`` and therefore lies in the lattice of
     ``C_dual``; ``degree_C_dual`` grades ``C_dual`` and lies in the lattice of
@@ -2188,22 +2188,22 @@ def validate_gorenstein_cone_data(P: Any, C: Any, C_dual: Any, degree_C: Any, de
         from cytools import Polytope
     except ImportError as e:
         raise ImportError("validate_gorenstein_cone_data requires CYTools") from e
-    for name, cone in (("C", C), ("C_dual", C_dual)):
-        if not hasattr(cone, "extremal_rays") or not hasattr(cone, "dimension"):
+    for name, cone in (("C",C),("C_dual",C_dual)):
+        if not hasattr(cone,"extremal_rays") or not hasattr(cone,"dimension"):
             raise TypeError(f"{name} must be a CYTools Cone")
     primal_rays=_primitive_rows(C.extremal_rays())
     dual_rays=_primitive_rows(C_dual.extremal_rays())
     ambient=primal_rays.shape[1]
     if dual_rays.shape[1]!=ambient:
         raise ValueError("C and C_dual have different ambient dimensions")
-    B=np.eye(ambient, dtype=np.int64) if pairing is None else np.asarray(pairing)
-    if B.shape!=(ambient, ambient):
-        raise ValueError(f"pairing must have shape {(ambient, ambient)}")
-    if not np.all(np.equal(B, np.rint(B))):
+    B=np.eye(ambient,dtype=np.int64) if pairing is None else np.asarray(pairing)
+    if B.shape!=(ambient,ambient):
+        raise ValueError(f"pairing must have shape {(ambient,ambient)}")
+    if not np.all(np.equal(B,np.rint(B))):
         raise ValueError("pairing matrix must be integral")
-    B=np.asarray(B, dtype=np.int64)
-    dC=_integer_vector(degree_C, name="degree_C", length=ambient)
-    dD=_integer_vector(degree_C_dual, name="degree_C_dual", length=ambient)
+    B=np.asarray(B,dtype=np.int64)
+    dC=_integer_vector(degree_C,name="degree_C",length=ambient)
+    dD=_integer_vector(degree_C_dual,name="degree_C_dual",length=ambient)
 
     def heights_on_C(v: np.ndarray)->np.ndarray:
         return primal_rays@B@v
@@ -2216,20 +2216,20 @@ def validate_gorenstein_cone_data(P: Any, C: Any, C_dual: Any, degree_C: Any, de
         dC, dD=dD, dC
         direct=True
     if not direct:
-        raise ValueError("the supplied vectors are not Gorenstein degree vectors for these " "cones. Required: every primitive extremal ray of C has degree 1 " "under degree_C, and every primitive extremal ray of C_dual has " "degree 1 under degree_C_dual. Observed degree sets: " f"C={sorted(set(map(int, heights_on_C(dC))))}, " f"C_dual={sorted(set(map(int, heights_on_dual(dD))))}")
+        raise ValueError("the supplied vectors are not Gorenstein degree vectors for these " "cones. Required: every primitive extremal ray of C has degree 1 " "under degree_C, and every primitive extremal ray of C_dual has " "degree 1 under degree_C_dual. Observed degree sets: " f"C={sorted(set(map(int,heights_on_C(dC))))}, " f"C_dual={sorted(set(map(int,heights_on_dual(dD))))}")
     cross=primal_rays@B@dual_rays.T
     if np.any(cross<0):
-        i, j=map(int, np.argwhere(cross<0)[0])
-        raise ValueError("C_dual is not dual to C for the supplied pairing: " f"pairing of extremal rays ({i},{j}) is {int(cross[i, j])}")
+        i, j=map(int,np.argwhere(cross<0)[0])
+        raise ValueError("C_dual is not dual to C for the supplied pairing: " f"pairing of extremal rays ({i},{j}) is {int(cross[i,j])}")
     index=int(dD@B@dC)
     if index<1:
         raise ValueError(f"the Gorenstein index must be positive, got {index}")
     if expected_index is not None and index!=int(expected_index):
         raise ValueError(f"expected Gorenstein index {expected_index}, got {index}")
     kw={"backend": poly_backend} if poly_backend else {}
-    primal_support=P if hasattr(P, "faces") else Polytope(_integer_points(P),**kw)
+    primal_support=P if hasattr(P,"faces") else Polytope(_integer_points(P),**kw)
     support_vertices=_integer_points(primal_support)
-    if set(map(tuple, support_vertices))!=set(map(tuple, primal_rays)):
+    if set(map(tuple,support_vertices))!=set(map(tuple,primal_rays)):
         raise ValueError("vertices of P are not exactly the primitive extremal rays of C")
     dual_support=Polytope(dual_rays,**kw)
     if check:
@@ -2241,11 +2241,11 @@ def validate_gorenstein_cone_data(P: Any, C: Any, C_dual: Any, degree_C: Any, de
             raise ValueError(f"P must have affine dimension {expected_support_dim}")
         if int(dual_support.dimension())!=expected_support_dim:
             raise ValueError(f"the dual degree-one support must have dimension {expected_support_dim}")
-        if np.any(~np.any(cross==0, axis=0)) or np.any(~np.any(cross==0, axis=1)):
+        if np.any(~np.any(cross==0,axis=0)) or np.any(~np.any(cross==0,axis=1)):
             raise ValueError("some extremal ray lies on no facet of the dual cone")
-    return GorensteinConeData(primal_cone=C, dual_cone=C_dual, primal_support=primal_support, dual_support=dual_support, primal_vertices=support_vertices, dual_vertices=dual_rays, degree_C=dC, degree_C_dual=dD, index=index,)
+    return GorensteinConeData(primal_cone=C,dual_cone=C_dual,primal_support=primal_support,dual_support=dual_support,primal_vertices=support_vertices,dual_vertices=dual_rays,degree_C=dC,degree_C_dual=dD,index=index,)
 
-def complete_split_witness_index_two(opposite_support: Any, degree: Any,)->Optional[Tuple[np.ndarray, np.ndarray]]:
+def complete_split_witness_index_two(opposite_support: Any,degree: Any,)->Optional[Tuple[np.ndarray,np.ndarray]]:
     """Return a two-point complete-splitting witness, if one exists.
     For a reflexive Gorenstein cone ``C`` of index two, the Batyrev--Nill
     criterion says that ``C`` is completely split exactly when its Gorenstein
@@ -2256,7 +2256,7 @@ def complete_split_witness_index_two(opposite_support: Any, degree: Any,)->Optio
     is an exact lattice test; it does not try to recognize a Cayley embedding
     from floating-point affine geometry.
     """
-    if hasattr(opposite_support, "points"):
+    if hasattr(opposite_support,"points"):
         points=np.asarray(opposite_support.points())
     else:
         try:
@@ -2266,21 +2266,21 @@ def complete_split_witness_index_two(opposite_support: Any, degree: Any,)->Optio
         points=np.asarray(Polytope(_integer_points(opposite_support)).points())
     if points.ndim!=2 or len(points)==0:
         raise ValueError("opposite support has no lattice points")
-    if not np.all(np.equal(points, np.rint(points))):
+    if not np.all(np.equal(points,np.rint(points))):
         raise ValueError("opposite support returned nonintegral lattice points")
-    points=np.asarray(points, dtype=np.int64)
-    target=_integer_vector(degree, name="degree", length=points.shape[1])
-    point_set={tuple(map(int, p)) for p in points}
+    points=np.asarray(points,dtype=np.int64)
+    target=_integer_vector(degree,name="degree",length=points.shape[1])
+    point_set={tuple(map(int,p)) for p in points}
     for first in sorted(point_set):
         second=tuple(int(target[i])-first[i] for i in range(len(target)))
         if second in point_set and second!=first:
-            return (np.asarray(first, dtype=np.int64), np.asarray(second, dtype=np.int64),)
+            return (np.asarray(first,dtype=np.int64),np.asarray(second,dtype=np.int64),)
     return None
 
 def _affine_dim(v: np.ndarray)->int:
     if len(v)<=1:
         return 0
-    return int(np.linalg.matrix_rank(np.asarray(v[1:]-v[0], dtype=float)))
+    return int(np.linalg.matrix_rank(np.asarray(v[1:]-v[0],dtype=float)))
 
 @dataclass(frozen=True)
 class Face:
@@ -2291,8 +2291,8 @@ class Face:
 class FaceLattice:
     """Face poset plus exact Ehrhart and Stanley-polynomial operations."""
 
-    def __init__(self, poly: Any,*, ehrhart_backend: str="auto", latte_count_bin: str="count", latte_options: Sequence[str]=("--redundancy-check=none",),cytools_work_cutoff=100_0):
-        if not hasattr(poly, "faces"):
+    def __init__(self,poly: Any,*,ehrhart_backend: str="auto",latte_count_bin: str="count",latte_options: Sequence[str]=("--redundancy-check=none",),cytools_work_cutoff=100_0):
+        if not hasattr(poly,"faces"):
             try:
                 from cytools import Polytope
             except ImportError as e:
@@ -2301,7 +2301,7 @@ class FaceLattice:
         self.source=poly
         self.vertices=_integer_points(poly)
         self.dim=int(poly.dimension())
-        if ehrhart_backend not in ("auto", "latte", "normaliz", "cytools"):
+        if ehrhart_backend not in ("auto","latte","normaliz","cytools"):
             raise ValueError("ehrhart_backend must be 'auto', 'latte', 'normaliz', or 'cytools'")
         self.ehrhart_backend=ehrhart_backend
         self._latte_count_bin=latte_count_bin
@@ -2323,36 +2323,36 @@ class FaceLattice:
                 if self._normaliz_executable is None:
                     raise ImportError("ehrhart_backend='normaliz' requires " "PyNormaliz or the normaliz executable")
         self._cytools_work_cutoff=cytools_work_cutoff
-        self._ehrhart_usage={"analytic": 0, "cytools": 0, "latte": 0, "normaliz": 0, "normaliz-cli": 0,}
+        self._ehrhart_usage={"analytic": 0,"cytools": 0,"latte": 0,"normaliz": 0,"normaliz-cli": 0,}
         face_dims=self._face_sets_cytools(poly)
         face_dims[frozenset()]=-1
         face_dims[frozenset(range(len(self.vertices)))]=self.dim
-        raw=sorted(face_dims, key=lambda s: (face_dims[s], tuple(sorted(s))))
-        self.faces=tuple(Face(i, s, face_dims[s]) for i, s in enumerate(raw))
+        raw=sorted(face_dims,key=lambda s: (face_dims[s],tuple(sorted(s))))
+        self.faces=tuple(Face(i,s,face_dims[s]) for i,s in enumerate(raw))
         self.by_vertices={f.vertices: f.id for f in self.faces}
-        self.by_dim: Dict[int, Tuple[int, ...]]={d: tuple(f.id for f in self.faces if f.dim==d) for d in range(-1, self.dim+1)}
+        self.by_dim: Dict[int,Tuple[int,...]]={d: tuple(f.id for f in self.faces if f.dim==d) for d in range(-1,self.dim+1)}
         self.empty=self.by_vertices[frozenset()]
         self.full=self.by_vertices[frozenset(range(len(self.vertices)))]
 
-    def _face_sets_cytools(self, poly: Any)->Dict[FrozenSet[int], int]:
-        lookup={tuple(map(int, x)): i for i, x in enumerate(self.vertices)}
-        ans: Dict[FrozenSet[int], int]={}
+    def _face_sets_cytools(self,poly: Any)->Dict[FrozenSet[int],int]:
+        lookup={tuple(map(int,x)): i for i,x in enumerate(self.vertices)}
+        ans: Dict[FrozenSet[int],int]={}
         for dim, level in enumerate(poly.faces()):
             for face in level:
-                key=frozenset(lookup[tuple(map(int, x))] for x in np.asarray(face.vertices()))
+                key=frozenset(lookup[tuple(map(int,x))] for x in np.asarray(face.vertices()))
                 ans[key]=dim
         return ans
 
     @lru_cache(maxsize=None)
-    def intrinsic_vertices(self, face_id: int)->np.ndarray:
+    def intrinsic_vertices(self,face_id: int)->np.ndarray:
         """Vertices of a face in its intrinsic lattice Z^d."""
         face=self.faces[face_id]
         if face.dim<=0:
-            return np.zeros((len(face.vertices), max(face.dim, 0)), dtype=np.int64,)
+            return np.zeros((len(face.vertices),max(face.dim,0)),dtype=np.int64,)
         verts=self.vertices[list(face.vertices)]
-        return _intrinsic_lattice_vertices(verts, face.dim,)
+        return _intrinsic_lattice_vertices(verts,face.dim,)
 
-    def _ehrhart_backend_for_face(self, face_id: int, intrinsic: np.ndarray,)->str:
+    def _ehrhart_backend_for_face(self,face_id: int,intrinsic: np.ndarray,)->str:
         """
         Select the Ehrhart backend for one individual face.
         """
@@ -2361,34 +2361,34 @@ class FaceLattice:
         d=self.faces[face_id].dim
         if self._latte_executable is None:
             return "cytools"
-        if _cytools_work_is_small(intrinsic, d, self._cytools_work_cutoff,):
+        if _cytools_work_is_small(intrinsic,d,self._cytools_work_cutoff,):
             return "cytools"
         return "latte"
 
     @lru_cache(maxsize=None)
-    def interval(self, lo: int, hi: int)->Tuple[int, ...]:
+    def interval(self,lo: int,hi: int)->Tuple[int,...]:
         a, b=self.faces[lo].vertices, self.faces[hi].vertices
         if not a.issubset(b):
             raise ValueError("not a face interval")
         return tuple(f.id for f in self.faces if a.issubset(f.vertices) and f.vertices.issubset(b))
 
     @lru_cache(maxsize=None)
-    def g_polynomial(self, lo: int, hi: int)->Poly1:
+    def g_polynomial(self,lo: int,hi: int)->Poly1:
         """Stanley's g-polynomial of the Eulerian interval [lo,hi]."""
         rank=self.faces[hi].dim-self.faces[lo].dim
         if rank==0:
             return (1,)
         h: Poly1=(0,)
-        for x in self.interval(lo, hi):
+        for x in self.interval(lo,hi):
             if x==lo:
                 continue
             exponent=self.faces[x].dim-self.faces[lo].dim-1
-            h=_add(h, _mul(_t_minus_one_pow(exponent), self.g_polynomial(x, hi)))
-        one_minus_t_h=_mul((1,-1), h)
+            h=_add(h,_mul(_t_minus_one_pow(exponent),self.g_polynomial(x,hi)))
+        one_minus_t_h=_mul((1,-1),h)
         cutoff=(rank-1)//2
         return _trim(one_minus_t_h[: cutoff+1])
 
-    def _count_dilate_cytools(self, verts: np.ndarray, k: int)->int:
+    def _count_dilate_cytools(self,verts: np.ndarray,k: int)->int:
         try:
             from cytools import Polytope
         except ImportError as e:
@@ -2399,9 +2399,9 @@ class FaceLattice:
             raise RuntimeError("CYTools failed while enumerating lattice points of a dilated face") from e
 
     @staticmethod
-    def _h_star_from_series(series: Any, d: int)->Poly1:
+    def _h_star_from_series(series: Any,d: int)->Poly1:
         """Decode a Normaliz series and recover h* exactly through degree d."""
-        if not isinstance(series, (list, tuple)) or len(series)!=3:
+        if not isinstance(series,(list,tuple)) or len(series)!=3:
             raise RuntimeError(f"unexpected Normaliz Ehrhart-series output: {series!r}")
         numerator, denominator_exponents, shift=series
         numerator=[int(x) for x in numerator]
@@ -2412,61 +2412,61 @@ class FaceLattice:
         for exponent in denominator_exponents:
             if exponent<=0:
                 raise RuntimeError("Normaliz returned a nonpositive denominator exponent")
-            for k in range(exponent, d+1):
+            for k in range(exponent,d+1):
                 inverse_denominator[k]+=inverse_denominator[k-exponent]
         counts=[]
         for k in range(d+1):
-            counts.append(sum(coefficient*inverse_denominator[k-shift-i] for i, coefficient in enumerate(numerator) if 0<=k-shift-i<=d))
-        return _h_star_from_counts(counts, d)
+            counts.append(sum(coefficient*inverse_denominator[k-shift-i] for i,coefficient in enumerate(numerator) if 0<=k-shift-i<=d))
+        return _h_star_from_counts(counts,d)
 
-    def _h_star_latte(self, verts: np.ndarray, d: int)->Poly1:
+    def _h_star_latte(self,verts: np.ndarray,d: int)->Poly1:
         """Compute h* from one exact LattE Ehrhart-polynomial call."""
-        coefficients=ehrhart_polynomial_latte_vrep(verts, intrinsic_dim=d, count_bin=self._latte_executable or self._latte_count_bin, latte_options=self._latte_options,)
-        return _h_star_from_counts(_ehrhart_values_from_coefficients(coefficients, d), d)
+        coefficients=ehrhart_polynomial_latte_vrep(verts,intrinsic_dim=d,count_bin=self._latte_executable or self._latte_count_bin,latte_options=self._latte_options,)
+        return _h_star_from_counts(_ehrhart_values_from_coefficients(coefficients,d),d)
 
-    def _h_star_normaliz(self, verts: np.ndarray, d: int)->Poly1:
+    def _h_star_normaliz(self,verts: np.ndarray,d: int)->Poly1:
         """Compute h* with the in-process PyNormaliz binding."""
         if self._normaliz_cone is None:
             raise RuntimeError("PyNormaliz backend was not initialized")
-        cone=self._normaliz_cone(polytope=np.asarray(verts, dtype=int).tolist())
-        series=(cone.EhrhartSeries() if hasattr(cone, "EhrhartSeries") else cone.HilbertSeries())
-        return self._h_star_from_series(series, d)
+        cone=self._normaliz_cone(polytope=np.asarray(verts,dtype=int).tolist())
+        series=(cone.EhrhartSeries() if hasattr(cone,"EhrhartSeries") else cone.HilbertSeries())
+        return self._h_star_from_series(series,d)
 
-    def _h_star_normaliz_cli(self, verts: np.ndarray, d: int)->Poly1:
+    def _h_star_normaliz_cli(self,verts: np.ndarray,d: int)->Poly1:
         """Compute h* with the Normaliz executable when PyNormaliz is absent."""
         if self._normaliz_executable is None:
             raise RuntimeError("Normaliz executable backend was not initialized")
-        vertices=np.asarray(verts, dtype=np.int64)
+        vertices=np.asarray(verts,dtype=np.int64)
         with tempfile.TemporaryDirectory(prefix="stringy_e_nmz_") as tmp:
             input_path=f"{tmp}/face.in"
             output_path=f"{tmp}/face.out"
-            with open(input_path, "w", encoding="utf-8") as stream:
+            with open(input_path,"w",encoding="utf-8") as stream:
                 stream.write(f"amb_space {vertices.shape[1]+1}\n")
                 stream.write(f"polytope {len(vertices)}\n")
                 for row in vertices:
-                    stream.write(" ".join(map(str, map(int, row)))+"\n")
-            process=subprocess.run([self._normaliz_executable, "-q", input_path], cwd=tmp, capture_output=True, text=True, check=False,)
+                    stream.write(" ".join(map(str,map(int,row)))+"\n")
+            process=subprocess.run([self._normaliz_executable,"-q",input_path],cwd=tmp,capture_output=True,text=True,check=False,)
             if process.returncode!=0 or not Path(output_path).exists():
                 raise RuntimeError("Normaliz failed to compute an Ehrhart series: "+(process.stderr.strip() or process.stdout.strip()))
-            with open(output_path, encoding="utf-8") as stream:
+            with open(output_path,encoding="utf-8") as stream:
                 lines=stream.readlines()
-        start=next((i for i, line in enumerate(lines) if "Hilbert series:" in line or "Ehrhart series:" in line), None,)
+        start=next((i for i,line in enumerate(lines) if "Hilbert series:" in line or "Ehrhart series:" in line),None,)
         if start is None:
             raise RuntimeError("Normaliz output contains no Ehrhart/Hilbert series")
         numerator=[int(x) for x in lines[start+1].split()]
         denominator_exponents: List[int]=[]
-        shift=next((int(line.split("=", 1)[1].strip()) for line in lines[start+2 :] if "shift" in line and "=" in line), 0,)
+        shift=next((int(line.split("=",1)[1].strip()) for line in lines[start+2 :] if "shift" in line and "=" in line),0,)
         for line in lines[start+2 :]:
-            for exponent, multiplicity in re.findall(r"(-?\d+)\s*:\s*(\d+)", line):
+            for exponent, multiplicity in re.findall(r"(-?\d+)\s*:\s*(\d+)",line):
                 denominator_exponents.extend([int(exponent)]*int(multiplicity))
             if denominator_exponents and not line.strip():
                 break
         if not denominator_exponents:
             raise RuntimeError("could not parse the Normaliz series denominator")
-        return self._h_star_from_series([numerator, denominator_exponents, shift], d)
+        return self._h_star_from_series([numerator,denominator_exponents,shift],d)
 
     @lru_cache(maxsize=None)
-    def lattice_count(self, face_id: int, k: int)->int:
+    def lattice_count(self,face_id: int,k: int)->int:
         if k<0:
             raise ValueError("dilation must be nonnegative")
         face=self.faces[face_id]
@@ -2475,10 +2475,10 @@ class FaceLattice:
         if k==0:
             return 1
         verts=self.vertices[list(face.vertices)]
-        return self._count_dilate_cytools(verts, k)
+        return self._count_dilate_cytools(verts,k)
 
     @lru_cache(maxsize=None)
-    def h_star(self, face_id: int)->Poly1:
+    def h_star(self,face_id: int)->Poly1:
         """Ehrhart h*-polynomial; h*_empty=1."""
         face=self.faces[face_id]
         d=face.dim
@@ -2487,64 +2487,64 @@ class FaceLattice:
         if d==0:
             return (1,)
         verts=self.vertices[list(face.vertices)]
-        cache_key=(d, tuple(sorted(tuple(map(int, row)) for row in verts)),)
+        cache_key=(d,tuple(sorted(tuple(map(int,row)) for row in verts)),)
         if cache_key in _HSTAR_CACHE:
             return _HSTAR_CACHE[cache_key]
         if d==1:
-            delta=np.asarray(verts[1]-verts[0], dtype=np.int64,)
+            delta=np.asarray(verts[1]-verts[0],dtype=np.int64,)
             lattice_length=int(np.gcd.reduce(np.abs(delta)))
-            answer=_trim((1, lattice_length-1))
+            answer=_trim((1,lattice_length-1))
             self._ehrhart_usage["analytic"]+=1
         else:
             intrinsic=self.intrinsic_vertices(face_id)
-            backend=self._ehrhart_backend_for_face(face_id, intrinsic,)
+            backend=self._ehrhart_backend_for_face(face_id,intrinsic,)
             if backend=="latte":
-                answer=self._h_star_latte(intrinsic, d,)
+                answer=self._h_star_latte(intrinsic,d,)
             elif backend=="normaliz":
                 if self._normaliz_cone is not None:
-                    answer=self._h_star_normaliz(intrinsic, d,)
+                    answer=self._h_star_normaliz(intrinsic,d,)
                 else:
-                    answer=self._h_star_normaliz_cli(intrinsic, d,)
+                    answer=self._h_star_normaliz_cli(intrinsic,d,)
                     backend="normaliz-cli"
             elif backend=="cytools":
                 counts=[1]
-                for k in range(1, d+1):
-                    counts.append(self._count_dilate_cytools(intrinsic, k,))
-                answer=_h_star_from_counts(counts, d,)
+                for k in range(1,d+1):
+                    counts.append(self._count_dilate_cytools(intrinsic,k,))
+                answer=_h_star_from_counts(counts,d,)
             else:
                 raise RuntimeError(f"unknown Ehrhart backend {backend!r}")
             self._ehrhart_usage[backend]+=1
         _HSTAR_CACHE[cache_key]=answer
         return answer
 
-    def precompute_s_tilde(self,*, verbose: bool=False, label: str="")->None:
+    def precompute_s_tilde(self,*,verbose: bool=False,label: str="")->None:
         """Populate all h*, g, and S-tilde caches, optionally showing progress."""
         total=len(self.faces)
-        report_every=max(1, total//20)
-        for i, face in enumerate(self.faces, 1):
+        report_every=max(1,total//20)
+        for i, face in enumerate(self.faces,1):
             self.s_tilde(face.id)
             if verbose and (i==1 or i==total or i%report_every==0):
                 prefix=f"{label}: " if label else ""
-                print(f"{prefix}{i}/{total} faces", flush=True)
+                print(f"{prefix}{i}/{total} faces",flush=True)
 
     @lru_cache(maxsize=None)
-    def s_tilde(self, face_id: int)->Poly1:
+    def s_tilde(self,face_id: int)->Poly1:
         """Borisov--Mavlyutov/Batyrev--Nill S-tilde polynomial."""
         p=self.faces[face_id]
         total: Poly1=(0,)
-        for g in self.interval(self.empty, face_id):
+        for g in self.interval(self.empty,face_id):
             fg=self.faces[g]
             sign=(-1)**(p.dim-fg.dim)
-            total=_add(total, _scale(_mul(self.h_star(g), self.g_polynomial(g, face_id)), sign))
+            total=_add(total,_scale(_mul(self.h_star(g),self.g_polynomial(g,face_id)),sign))
         return total
 
-def _translated_hstar_key(verts, d):
+def _translated_hstar_key(verts,d):
     """Cheap translation-invariant cache key."""
-    v=np.asarray(verts, dtype=np.int64)
+    v=np.asarray(verts,dtype=np.int64)
     v=v-v[0]
-    return (d, tuple(sorted(tuple(map(int, row)) for row in v)),)
+    return (d,tuple(sorted(tuple(map(int,row)) for row in v)),)
 
-def pair_dual_faces(primal: FaceLattice, dual: FaceLattice, pairing: Optional[np.ndarray]=None,*, check: bool=True,)->Dict[int, int]:
+def pair_dual_faces(primal: FaceLattice,dual: FaceLattice,pairing: Optional[np.ndarray]=None,*,check: bool=True,)->Dict[int,int]:
     """Pair faces by annihilation: F* has vertices y with <x,y>=0 for all x in F."""
     if pairing is None:
         if primal.vertices.shape[1]!=dual.vertices.shape[1]:
@@ -2553,20 +2553,20 @@ def pair_dual_faces(primal: FaceLattice, dual: FaceLattice, pairing: Optional[np
     else:
         b=np.asarray(pairing)
         pair=primal.vertices@b@dual.vertices.T
-    if not np.all(np.equal(pair, np.rint(pair))):
+    if not np.all(np.equal(pair,np.rint(pair))):
         raise ValueError("pairings must be integral")
-    pair=np.asarray(pair, dtype=np.int64)
+    pair=np.asarray(pair,dtype=np.int64)
     if check and np.any(pair<0):
-        ij=tuple(map(int, np.argwhere(pair<0)[0]))
+        ij=tuple(map(int,np.argwhere(pair<0)[0]))
         raise ValueError(f"negative primal/dual support pairing at vertex pair {ij}")
-    out: Dict[int, int]={}
+    out: Dict[int,int]={}
     all_dual=frozenset(range(len(dual.vertices)))
     for f in primal.faces:
         if f.dim==-1:
             star=all_dual
         else:
             rows=list(f.vertices)
-            star=frozenset(np.flatnonzero(np.all(pair[rows, :]==0, axis=0)).tolist())
+            star=frozenset(np.flatnonzero(np.all(pair[rows,:]==0,axis=0)).tolist())
         if star not in dual.by_vertices:
             raise ValueError(f"zero set for primal face {f.id} is not a dual face")
         out[f.id]=dual.by_vertices[star]
@@ -2579,28 +2579,28 @@ def pair_dual_faces(primal: FaceLattice, dual: FaceLattice, pairing: Optional[np
 @dataclass
 class StringyEResult:
     coefficients: Laurent2
-    hodge_numbers: Dict[Tuple[int, int], int]
+    hodge_numbers: Dict[Tuple[int,int],int]
     index: int
     polytope_dim: int
     cy_dim: int
     primal: FaceLattice
     dual: FaceLattice
-    dual_faces: Dict[int, int]
+    dual_faces: Dict[int,int]
     primal_completely_split: Optional[bool]=None
     dual_completely_split: Optional[bool]=None
-    primal_split_witness: Optional[Tuple[np.ndarray, np.ndarray]]=None
-    dual_split_witness: Optional[Tuple[np.ndarray, np.ndarray]]=None
+    primal_split_witness: Optional[Tuple[np.ndarray,np.ndarray]]=None
+    dual_split_witness: Optional[Tuple[np.ndarray,np.ndarray]]=None
     cayley_data: Optional[CayleyGorensteinData]=None
     cone_data: Optional[GorensteinConeData]=None
 
     def e_polynomial(self)->str:
         return format_laurent(self.coefficients)
 
-    def hodge_diamond(self, fill: int=0)->List[List[int]]:
-        return [[self.hodge_numbers.get((p, q), fill) for q in range(self.cy_dim+1)] for p in range(self.cy_dim+1)]
+    def hodge_diamond(self,fill: int=0)->List[List[int]]:
+        return [[self.hodge_numbers.get((p,q),fill) for q in range(self.cy_dim+1)] for p in range(self.cy_dim+1)]
 
     @property
-    def formal_hodge_numbers(self)->Dict[Tuple[int, int], int]:
+    def formal_hodge_numbers(self)->Dict[Tuple[int,int],int]:
         """Alias emphasizing that a geometric realization needs a split cone."""
         return self.hodge_numbers
 
@@ -2620,26 +2620,26 @@ class StringyEResult:
 @dataclass
 class StringyHodgeResult:
     """Hodge-only result that does not materialize the stringy E-polynomial."""
-    hodge_numbers: Dict[Tuple[int, int], int]
+    hodge_numbers: Dict[Tuple[int,int],int]
     index: int
     polytope_dim: int
     cy_dim: int
     primal: FaceLattice
     dual: FaceLattice
-    dual_faces: Dict[int, int]
+    dual_faces: Dict[int,int]
 
-    def hodge_diamond(self, fill: int=0)->List[List[int]]:
-        return [[self.hodge_numbers.get((p, q), fill) for q in range(self.cy_dim+1)] for p in range(self.cy_dim+1)]
+    def hodge_diamond(self,fill: int=0)->List[List[int]]:
+        return [[self.hodge_numbers.get((p,q),fill) for q in range(self.cy_dim+1)] for p in range(self.cy_dim+1)]
 
-def _accumulate_term(out: Laurent2, a: Poly1, b: Poly1, power_u: int, sign: int, shift: int)->None:
+def _accumulate_term(out: Laurent2,a: Poly1,b: Poly1,power_u: int,sign: int,shift: int)->None:
     for i, x in enumerate(a):
         for j, y in enumerate(b):
-            key=(power_u-i+j-shift, i+j-shift)
-            out[key]=out.get(key, 0)+sign*x*y
+            key=(power_u-i+j-shift,i+j-shift)
+            out[key]=out.get(key,0)+sign*x*y
             if out[key]==0:
                 del out[key]
 
-def _accumulate_hodge_term(out: Laurent2, a: Poly1, b: Poly1, power_u: int, shift: int)->None:
+def _accumulate_hodge_term(out: Laurent2,a: Poly1,b: Poly1,power_u: int,shift: int)->None:
     """Accumulate Hodge numbers directly, without first storing E coefficients.
     For a face of rank ``power_u``, the E-term sign and the extraction sign
     cancel because the parity of the two resulting exponents is
@@ -2651,12 +2651,12 @@ def _accumulate_hodge_term(out: Laurent2, a: Poly1, b: Poly1, power_u: int, shif
         for j, y in enumerate(b):
             if not y:
                 continue
-            key=(power_u-i+j-shift, i+j-shift)
-            out[key]=out.get(key, 0)+x*y
+            key=(power_u-i+j-shift,i+j-shift)
+            out[key]=out.get(key,0)+x*y
             if out[key]==0:
                 del out[key]
 
-def stringy_hodge(primal_poly: Any, dual_poly: Any,*, index: int=2, pairing: Optional[np.ndarray]=None, check: bool=True, require_nonnegative_hodge: bool=True, ehrhart_backend: str="auto", latte_count_bin: str="count", latte_options: Sequence[str]=("--redundancy-check=none",), verbose: bool=False,cytools_work_cutoff: int=100_0)->StringyHodgeResult:
+def stringy_hodge(primal_poly: Any,dual_poly: Any,*,index: int=2,pairing: Optional[np.ndarray]=None,check: bool=True,require_nonnegative_hodge: bool=True,ehrhart_backend: str="auto",latte_count_bin: str="count",latte_options: Sequence[str]=("--redundancy-check=none",),verbose: bool=False,cytools_work_cutoff: int=100_0)->StringyHodgeResult:
     """Compute only the stringy Hodge numbers/Hodge diamond.
     This uses the same exact facewise S-tilde formula as :func:`stringy_e`,
     but avoids allocating the E-polynomial and avoids assembling the dual
@@ -2665,53 +2665,53 @@ def stringy_hodge(primal_poly: Any, dual_poly: Any,*, index: int=2, pairing: Opt
     if index<1:
         raise ValueError("index must be positive")
     started=perf_counter()
-    p=FaceLattice(primal_poly, ehrhart_backend=ehrhart_backend, latte_count_bin=latte_count_bin, latte_options=latte_options,cytools_work_cutoff=cytools_work_cutoff)
-    q=FaceLattice(dual_poly, ehrhart_backend=ehrhart_backend, latte_count_bin=latte_count_bin, latte_options=latte_options,cytools_work_cutoff=cytools_work_cutoff)
+    p=FaceLattice(primal_poly,ehrhart_backend=ehrhart_backend,latte_count_bin=latte_count_bin,latte_options=latte_options,cytools_work_cutoff=cytools_work_cutoff)
+    q=FaceLattice(dual_poly,ehrhart_backend=ehrhart_backend,latte_count_bin=latte_count_bin,latte_options=latte_options,cytools_work_cutoff=cytools_work_cutoff)
     if p.dim!=q.dim:
         raise ValueError("dual Gorenstein support polytopes must have equal dimension")
-    star=pair_dual_faces(p, q, pairing, check=check)
+    star=pair_dual_faces(p,q,pairing,check=check)
     if verbose:
-        print(f"face lattices: {len(p.faces)} primal, {len(q.faces)} dual; Ehrhart backend: {p.ehrhart_backend}", flush=True)
+        print(f"face lattices: {len(p.faces)} primal, {len(q.faces)} dual; Ehrhart backend: {p.ehrhart_backend}",flush=True)
     cy_dim=p.dim+1-2*index
-    hodge: Laurent2={(p_, q_): 0 for p_ in range(cy_dim+1) for q_ in range(cy_dim+1)}
+    hodge: Laurent2={(p_,q_): 0 for p_ in range(cy_dim+1) for q_ in range(cy_dim+1)}
     for face in p.faces:
         rank=face.dim+1
-        _accumulate_hodge_term(hodge, p.s_tilde(face.id), q.s_tilde(star[face.id]), rank, index,)
-    result=StringyHodgeResult(hodge, index, p.dim, cy_dim, p, q, star)
+        _accumulate_hodge_term(hodge,p.s_tilde(face.id),q.s_tilde(star[face.id]),rank,index,)
+    result=StringyHodgeResult(hodge,index,p.dim,cy_dim,p,q,star)
     if check:
-        _check_hodge_result(result, require_nonnegative_hodge=require_nonnegative_hodge)
+        _check_hodge_result(result,require_nonnegative_hodge=require_nonnegative_hodge)
     if verbose:
-        print(f"completed Hodge-only computation in {perf_counter()-started:.2f} seconds", flush=True)
+        print(f"completed Hodge-only computation in {perf_counter()-started:.2f} seconds",flush=True)
     return result
 
-def stringy_e(primal_poly: Any, dual_poly: Any,*, index: int=2, pairing: Optional[np.ndarray]=None, check: bool=True, require_nonnegative_hodge: bool=True, ehrhart_backend: str="auto", latte_count_bin: str="count", latte_options: Sequence[str]=("--redundancy-check=none",), verbose: bool=False,cytools_work_cutoff: int=100_0)->StringyEResult:
+def stringy_e(primal_poly: Any,dual_poly: Any,*,index: int=2,pairing: Optional[np.ndarray]=None,check: bool=True,require_nonnegative_hodge: bool=True,ehrhart_backend: str="auto",latte_count_bin: str="count",latte_options: Sequence[str]=("--redundancy-check=none",),verbose: bool=False,cytools_work_cutoff: int=100_0)->StringyEResult:
     """Compute the Batyrev--Nill stringy E-function and stringy Hodge numbers."""
     if index<1:
         raise ValueError("index must be positive")
     started=perf_counter()
-    p=FaceLattice(primal_poly, ehrhart_backend=ehrhart_backend, latte_count_bin=latte_count_bin, latte_options=latte_options,cytools_work_cutoff=cytools_work_cutoff)
-    q=FaceLattice(dual_poly, ehrhart_backend=ehrhart_backend, latte_count_bin=latte_count_bin, latte_options=latte_options,cytools_work_cutoff=cytools_work_cutoff)
+    p=FaceLattice(primal_poly,ehrhart_backend=ehrhart_backend,latte_count_bin=latte_count_bin,latte_options=latte_options,cytools_work_cutoff=cytools_work_cutoff)
+    q=FaceLattice(dual_poly,ehrhart_backend=ehrhart_backend,latte_count_bin=latte_count_bin,latte_options=latte_options,cytools_work_cutoff=cytools_work_cutoff)
     if p.dim!=q.dim:
         raise ValueError("dual Gorenstein support polytopes must have equal dimension")
-    star=pair_dual_faces(p, q, pairing, check=check)
+    star=pair_dual_faces(p,q,pairing,check=check)
     if verbose:
-        print(f"face lattices: {len(p.faces)} primal, {len(q.faces)} dual; " f"Ehrhart backend: {p.ehrhart_backend}", flush=True,)
-    p.precompute_s_tilde(verbose=verbose, label="primal")
-    q.precompute_s_tilde(verbose=verbose, label="dual")
+        print(f"face lattices: {len(p.faces)} primal, {len(q.faces)} dual; " f"Ehrhart backend: {p.ehrhart_backend}",flush=True,)
+    p.precompute_s_tilde(verbose=verbose,label="primal")
+    q.precompute_s_tilde(verbose=verbose,label="dual")
     e: Laurent2={}
     for f in p.faces:
         k=f.dim+1
-        _accumulate_term(e, p.s_tilde(f.id), q.s_tilde(star[f.id]), k, (-1)**k, index)
+        _accumulate_term(e,p.s_tilde(f.id),q.s_tilde(star[f.id]),k,(-1)**k,index)
     cy_dim=p.dim+1-2*index
-    hodge={(a, b): (-1)**(a+b)*c for (a, b), c in e.items()}
-    result=StringyEResult(e, hodge, index, p.dim, cy_dim, p, q, star)
+    hodge={(a,b): (-1)**(a+b)*c for (a,b),c in e.items()}
+    result=StringyEResult(e,hodge,index,p.dim,cy_dim,p,q,star)
     if check:
-        _check_result(result, require_nonnegative_hodge=require_nonnegative_hodge)
+        _check_result(result,require_nonnegative_hodge=require_nonnegative_hodge)
     if verbose:
-        print(f"completed in {perf_counter()-started:.2f} seconds", flush=True)
+        print(f"completed in {perf_counter()-started:.2f} seconds",flush=True)
     return result
 
-def stringy_e_from_summands(delta1: Any, delta2: Any,*, interior_point: Optional[Sequence[int]]=None, index: int=2, poly_backend: Optional[str]=None, check: bool=True, require_nonnegative_hodge: bool=True, ehrhart_backend: str="auto", latte_count_bin: str="count", latte_options: Sequence[str]=("--redundancy-check=none",), verbose: bool=False,)->StringyEResult:
+def stringy_e_from_summands(delta1: Any,delta2: Any,*,interior_point: Optional[Sequence[int]]=None,index: int=2,poly_backend: Optional[str]=None,check: bool=True,require_nonnegative_hodge: bool=True,ehrhart_backend: str="auto",latte_count_bin: str="count",latte_options: Sequence[str]=("--redundancy-check=none",),verbose: bool=False,)->StringyEResult:
     """Compatibility entry point that constructs cones from two summands.
     This constructs and dualizes the Cayley cone natively, verifies that the
     dual rays form a degree-one Gorenstein support, and computes its stringy
@@ -2720,97 +2720,97 @@ def stringy_e_from_summands(delta1: Any, delta2: Any,*, interior_point: Optional
     """
     if check and index!=2:
         raise ValueError("a two-part Cayley support has Gorenstein index 2")
-    data=cayley_gorenstein_data(delta1, delta2, interior_point=interior_point, poly_backend=poly_backend, check=check,)
-    result=stringy_e(data.primal_support, data.dual_support, index=index, check=check, require_nonnegative_hodge=require_nonnegative_hodge, ehrhart_backend=ehrhart_backend, latte_count_bin=latte_count_bin, latte_options=latte_options, verbose=verbose,)
+    data=cayley_gorenstein_data(delta1,delta2,interior_point=interior_point,poly_backend=poly_backend,check=check,)
+    result=stringy_e(data.primal_support,data.dual_support,index=index,check=check,require_nonnegative_hodge=require_nonnegative_hodge,ehrhart_backend=ehrhart_backend,latte_count_bin=latte_count_bin,latte_options=latte_options,verbose=verbose,)
     result.cayley_data=data
     return result
 
-def stringy_hodge_from_summands(delta1: Any, delta2: Any,*, interior_point: Optional[Sequence[int]]=None, index: int=2, poly_backend: Optional[str]=None, check: bool=True, require_nonnegative_hodge: bool=True, ehrhart_backend: str="auto", latte_count_bin: str="count", latte_options: Sequence[str]=("--redundancy-check=none",), verbose: bool=False,)->StringyHodgeResult:
+def stringy_hodge_from_summands(delta1: Any,delta2: Any,*,interior_point: Optional[Sequence[int]]=None,index: int=2,poly_backend: Optional[str]=None,check: bool=True,require_nonnegative_hodge: bool=True,ehrhart_backend: str="auto",latte_count_bin: str="count",latte_options: Sequence[str]=("--redundancy-check=none",),verbose: bool=False,)->StringyHodgeResult:
     """Hodge-only counterpart of :func:`stringy_e_from_summands`."""
     if check and index!=2:
         raise ValueError("a two-part Cayley support has Gorenstein index 2")
-    data=cayley_gorenstein_data(delta1, delta2, interior_point=interior_point, poly_backend=poly_backend, check=check,)
-    return stringy_hodge(data.primal_support, data.dual_support, index=index, check=check, require_nonnegative_hodge=require_nonnegative_hodge, ehrhart_backend=ehrhart_backend, latte_count_bin=latte_count_bin, latte_options=latte_options, verbose=verbose,)
+    data=cayley_gorenstein_data(delta1,delta2,interior_point=interior_point,poly_backend=poly_backend,check=check,)
+    return stringy_hodge(data.primal_support,data.dual_support,index=index,check=check,require_nonnegative_hodge=require_nonnegative_hodge,ehrhart_backend=ehrhart_backend,latte_count_bin=latte_count_bin,latte_options=latte_options,verbose=verbose,)
 
-def stringy_e_from_cones(P: Any, C: Any, C_dual: Any, degree_C: Any, degree_C_dual: Any,*, pairing: Optional[np.ndarray]=None, expected_index: Optional[int]=None, poly_backend: Optional[str]=None, check: bool=True, require_nonnegative_hodge: bool=True, ehrhart_backend: str="auto", latte_count_bin: str="count", latte_options: Sequence[str]=("--redundancy-check=none",), verbose: bool=False,)->StringyEResult:
+def stringy_e_from_cones(P: Any,C: Any,C_dual: Any,degree_C: Any,degree_C_dual: Any,*,pairing: Optional[np.ndarray]=None,expected_index: Optional[int]=None,poly_backend: Optional[str]=None,check: bool=True,require_nonnegative_hodge: bool=True,ehrhart_backend: str="auto",latte_count_bin: str="count",latte_options: Sequence[str]=("--redundancy-check=none",),verbose: bool=False,)->StringyEResult:
     """Compute the stringy E-function from fully precomputed Cayley cone data.
     No Cayley cone, dual cone, Gorenstein degree vector, or index is
     recomputed.  Only primitive extremal rays are requested from the supplied
     cones, since these are needed to construct and validate the two support
     polytopes.
     """
-    data=validate_gorenstein_cone_data(P, C, C_dual, degree_C, degree_C_dual, pairing=pairing, expected_index=expected_index, poly_backend=poly_backend, check=check,)
-    result=stringy_e(data.primal_support, data.dual_support, index=data.index, pairing=pairing, check=check, require_nonnegative_hodge=require_nonnegative_hodge, ehrhart_backend=ehrhart_backend, latte_count_bin=latte_count_bin, latte_options=latte_options, verbose=verbose,)
+    data=validate_gorenstein_cone_data(P,C,C_dual,degree_C,degree_C_dual,pairing=pairing,expected_index=expected_index,poly_backend=poly_backend,check=check,)
+    result=stringy_e(data.primal_support,data.dual_support,index=data.index,pairing=pairing,check=check,require_nonnegative_hodge=require_nonnegative_hodge,ehrhart_backend=ehrhart_backend,latte_count_bin=latte_count_bin,latte_options=latte_options,verbose=verbose,)
     result.cone_data=data
     if data.index==2:
-        result.primal_split_witness=complete_split_witness_index_two(data.dual_support, data.degree_C)
-        result.dual_split_witness=complete_split_witness_index_two(data.primal_support, data.degree_C_dual)
+        result.primal_split_witness=complete_split_witness_index_two(data.dual_support,data.degree_C)
+        result.dual_split_witness=complete_split_witness_index_two(data.primal_support,data.degree_C_dual)
         result.primal_completely_split=result.primal_split_witness is not None
         result.dual_completely_split=result.dual_split_witness is not None
         if verbose:
-            print("complete splitting: " f"C={result.primal_completely_split}, " f"C_dual={result.dual_completely_split}", flush=True,)
-            print(result.interpretation(), flush=True)
+            print("complete splitting: " f"C={result.primal_completely_split}, " f"C_dual={result.dual_completely_split}",flush=True,)
+            print(result.interpretation(),flush=True)
     return result
 
-def stringy_hodge_from_cones(P: Any, C: Any, C_dual: Any, degree_C: Any, degree_C_dual: Any,*, pairing: Optional[np.ndarray]=None, expected_index: Optional[int]=None, poly_backend: Optional[str]=None, check: bool=True, require_nonnegative_hodge: bool=True, ehrhart_backend: str="auto", latte_count_bin: str="count", latte_options: Sequence[str]=("--redundancy-check=none",), verbose: bool=False,)->StringyHodgeResult:
+def stringy_hodge_from_cones(P: Any,C: Any,C_dual: Any,degree_C: Any,degree_C_dual: Any,*,pairing: Optional[np.ndarray]=None,expected_index: Optional[int]=None,poly_backend: Optional[str]=None,check: bool=True,require_nonnegative_hodge: bool=True,ehrhart_backend: str="auto",latte_count_bin: str="count",latte_options: Sequence[str]=("--redundancy-check=none",),verbose: bool=False,)->StringyHodgeResult:
     """Compute only the Hodge diamond from precomputed Cayley cone data."""
-    data=validate_gorenstein_cone_data(P, C, C_dual, degree_C, degree_C_dual, pairing=pairing, expected_index=expected_index, poly_backend=poly_backend, check=check,)
-    return stringy_hodge(data.primal_support, data.dual_support, index=data.index, pairing=pairing, check=check, require_nonnegative_hodge=require_nonnegative_hodge, ehrhart_backend=ehrhart_backend, latte_count_bin=latte_count_bin, latte_options=latte_options, verbose=verbose,)
+    data=validate_gorenstein_cone_data(P,C,C_dual,degree_C,degree_C_dual,pairing=pairing,expected_index=expected_index,poly_backend=poly_backend,check=check,)
+    return stringy_hodge(data.primal_support,data.dual_support,index=data.index,pairing=pairing,check=check,require_nonnegative_hodge=require_nonnegative_hodge,ehrhart_backend=ehrhart_backend,latte_count_bin=latte_count_bin,latte_options=latte_options,verbose=verbose,)
 stringy_e_cayley=stringy_e_from_cones
 
-def _check_hodge_result(r: StringyHodgeResult,*, require_nonnegative_hodge: bool)->None:
+def _check_hodge_result(r: StringyHodgeResult,*,require_nonnegative_hodge: bool)->None:
     if r.cy_dim<0:
         raise ValueError("negative Calabi--Yau dimension")
     bad=[key for key in r.hodge_numbers if min(key)<0 or max(key)>r.cy_dim]
     if bad:
         raise ValueError(f"Hodge numbers fall outside the CY range: {bad[:5]}")
-    for (p, q), value in r.hodge_numbers.items():
-        if r.hodge_numbers.get((q, p), 0)!=value:
+    for (p,q), value in r.hodge_numbers.items():
+        if r.hodge_numbers.get((q,p),0)!=value:
             raise ValueError("Hodge symmetry check failed")
-        if r.hodge_numbers.get((r.cy_dim-p, r.cy_dim-q), 0)!=value:
+        if r.hodge_numbers.get((r.cy_dim-p,r.cy_dim-q),0)!=value:
             raise ValueError("Poincare duality check failed")
     if require_nonnegative_hodge and any(value<0 for value in r.hodge_numbers.values()):
         raise ValueError("negative extracted stringy Hodge numbers")
 
-def _check_result(r: StringyEResult,*, require_nonnegative_hodge: bool)->None:
+def _check_result(r: StringyEResult,*,require_nonnegative_hodge: bool)->None:
     if r.cy_dim<0:
         raise ValueError("negative Calabi--Yau dimension")
     bad=[k for k in r.coefficients if min(k)<0 or max(k)>r.cy_dim]
     if bad:
         raise ValueError(f"E-function did not become a CY-range polynomial; bad exponents: {bad[:5]}")
-    for (a, b), c in r.coefficients.items():
-        if r.coefficients.get((b, a), 0)!=c:
+    for (a,b), c in r.coefficients.items():
+        if r.coefficients.get((b,a),0)!=c:
             raise ValueError("u-v symmetry check failed")
-        if r.coefficients.get((r.cy_dim-a, r.cy_dim-b), 0)!=c:
+        if r.coefficients.get((r.cy_dim-a,r.cy_dim-b),0)!=c:
             raise ValueError("Poincare duality check failed")
-    inverse_star={dual_id: primal_id for primal_id, dual_id in r.dual_faces.items()}
+    inverse_star={dual_id: primal_id for primal_id,dual_id in r.dual_faces.items()}
     if len(inverse_star)!=len(r.dual.faces):
         raise ValueError("cannot verify mirror reciprocity: face duality is not bijective")
     dual_e: Laurent2={}
     for face in r.dual.faces:
         k=face.dim+1
-        _accumulate_term(dual_e, r.dual.s_tilde(face.id), r.primal.s_tilde(inverse_star[face.id]), k, (-1)**k, r.index,)
-    expected_from_dual={(r.cy_dim-a, b): (-1)**r.cy_dim*coefficient for (a, b), coefficient in dual_e.items() if coefficient}
+        _accumulate_term(dual_e,r.dual.s_tilde(face.id),r.primal.s_tilde(inverse_star[face.id]),k,(-1)**k,r.index,)
+    expected_from_dual={(r.cy_dim-a,b): (-1)**r.cy_dim*coefficient for (a,b),coefficient in dual_e.items() if coefficient}
     if expected_from_dual!=r.coefficients:
         raise ValueError("primal/dual mirror-reciprocity check failed")
     if require_nonnegative_hodge:
-        bad_h={k: v for k, v in r.hodge_numbers.items() if v<0}
+        bad_h={k: v for k,v in r.hodge_numbers.items() if v<0}
         if bad_h:
             raise ValueError(f"negative extracted stringy Hodge numbers: {bad_h}")
 
-def extract_hodge_numbers(e: Mapping[Tuple[int, int], int],*, check_nonnegative: bool=True)->Dict[Tuple[int, int], int]:
+def extract_hodge_numbers(e: Mapping[Tuple[int,int],int],*,check_nonnegative: bool=True)->Dict[Tuple[int,int],int]:
     """Extract h^{p,q} from E=sum (-1)^(p+q) h^{p,q} u^p v^q."""
-    h={(p, q): (-1)**(p+q)*int(c) for (p, q), c in e.items() if c}
+    h={(p,q): (-1)**(p+q)*int(c) for (p,q),c in e.items() if c}
     if check_nonnegative and any(x<0 for x in h.values()):
         raise ValueError("coefficients do not define nonnegative stringy Hodge numbers")
     return h
 
-def format_laurent(poly: Mapping[Tuple[int, int], int])->str:
+def format_laurent(poly: Mapping[Tuple[int,int],int])->str:
     """Human-readable exact two-variable Laurent polynomial."""
     if not poly:
         return "0"
     terms: List[str]=[]
-    for (a, b), c in sorted(poly.items(), key=lambda z: (sum(z[0]), z[0]), reverse=True):
+    for (a,b), c in sorted(poly.items(),key=lambda z: (sum(z[0]),z[0]),reverse=True):
         factors=(["u" if a==1 else f"u^{a}"] if a else [])+(["v" if b==1 else f"v^{b}"] if b else [])
         mon="*".join(factors)
         mag=abs(c)
@@ -2819,137 +2819,135 @@ def format_laurent(poly: Mapping[Tuple[int, int], int])->str:
     s=" ".join(terms)
     return s[2:] if s.startswith("+ ") else "-"+s[2:] if s.startswith("- ") else s
 
-def check_two_part_cayley(points: Any,*, base_dim: int=6)->None:
+def check_two_part_cayley(points: Any,*,base_dim: int=6)->None:
     """Strong shape/height check for the convention (Delta_i,e_i)."""
     v=_integer_points(points)
     if v.shape[1]!=base_dim+2:
         raise ValueError(f"expected {base_dim+2} coordinates")
-    heights={tuple(map(int, x[-2:])) for x in v}
-    if not heights.issubset({(1, 0), (0, 1)}) or heights!={(1, 0), (0, 1)}:
+    heights={tuple(map(int,x[-2:])) for x in v}
+    if not heights.issubset({(1,0),(0,1)}) or heights!={(1,0),(0,1)}:
         raise ValueError("Cayley heights must be exactly (1,0) and (0,1), both present")
     if _affine_dim(v)!=base_dim+1:
         raise ValueError(f"expected affine dimension {base_dim+1}")
-__all__=["CayleyGorensteinData", "GorensteinConeData", "Face", "FaceLattice", "StringyEResult", "StringyHodgeResult", "cayley_support", "cayley_support_2part", "cayley_gorenstein_data", "check_two_part_cayley", "clear_hstar_cache", "complete_split_witness_index_two", "dual_support_vertices_cytools", "ehrhart_polynomial_latte_vrep", "extract_hodge_numbers", "format_laurent", "hstar_cache_size", "pair_dual_faces", "stringy_e", "stringy_e_cayley", "stringy_e_from_cones", "stringy_e_from_summands", "stringy_hodge", "stringy_hodge_from_cones", "stringy_hodge_from_summands", "validate_gorenstein_cone_data", "write_latte_vrep",]
+__all__=["CayleyGorensteinData","GorensteinConeData","Face","FaceLattice","StringyEResult","StringyHodgeResult","cayley_support","cayley_support_2part","cayley_gorenstein_data","check_two_part_cayley","clear_hstar_cache","complete_split_witness_index_two","dual_support_vertices_cytools","ehrhart_polynomial_latte_vrep","extract_hodge_numbers","format_laurent","hstar_cache_size","pair_dual_faces","stringy_e","stringy_e_cayley","stringy_e_from_cones","stringy_e_from_summands","stringy_hodge","stringy_hodge_from_cones","stringy_hodge_from_summands","validate_gorenstein_cone_data","write_latte_vrep",]
 
-def get_E_function(F, backend="auto", verbose=False, hodge_only=True):
+def get_E_function(F,backend="auto",verbose=False,hodge_only=True):
     CM=Cayley_M(F)
     ConeM=Cone(CM.vertices())
     ConeN=ConeM.dual()
     GM=is_Gorenstein(ConeM)[1]
     GN=is_Gorenstein(ConeN)[1]
     compute=stringy_hodge_from_cones if hodge_only else stringy_e_from_cones
-    return compute(CM, ConeM, ConeN, GM, GN, ehrhart_backend=backend, verbose=verbose)
+    return compute(CM,ConeM,ConeN,GM,GN,ehrhart_backend=backend,verbose=verbose)
 
-def _integer_solve(B, b, atol=1e-8):
+def _integer_solve(B,b,atol=1e-8):
     """
     Solve B @ x = b numerically and return x if it is sufficiently
     close to an integer vector.
     """
-    B=np.asarray(B, dtype=float)
-    b=np.asarray(b, dtype=float)
+    B=np.asarray(B,dtype=float)
+    b=np.asarray(b,dtype=float)
     try:
-        x=np.linalg.solve(B, b)
+        x=np.linalg.solve(B,b)
     except np.linalg.LinAlgError:
         return None
     x_int=np.rint(x).astype(int)
-    if not np.allclose(x, x_int, atol=atol, rtol=0):
+    if not np.allclose(x,x_int,atol=atol,rtol=0):
         return None
-    if not np.allclose(B@x_int, b, atol=atol, rtol=0):
+    if not np.allclose(B@x_int,b,atol=atol,rtol=0):
         return None
     return x_int
 
-def sums_to_anticanonical(points, divisors, atol=1e-8):
+def sums_to_anticanonical(points,divisors,atol=1e-8):
     """
     Determine whether L1 + ... + Lr is linearly equivalent to
     the anticanonical divisor.
     """
-    points=np.asarray(points, dtype=int)
-    divisors=np.asarray(divisors, dtype=int)
-    total=np.sum(divisors, axis=0)
+    points=np.asarray(points,dtype=int)
+    divisors=np.asarray(divisors,dtype=int)
+    total=np.sum(divisors,axis=0)
     b=1-total
     if np.all(b==0):
-        return True, np.zeros(points.shape[1], dtype=int)
+        return True, np.zeros(points.shape[1],dtype=int)
     dim=points.shape[1]
-    basis_indices=np.asarray(basis(points), dtype=int)
+    basis_indices=np.asarray(basis(points),dtype=int)
     B=points[basis_indices]
     bB=b[basis_indices]
-    m=_integer_solve(B, bB, atol=atol)
+    m=_integer_solve(B,bB,atol=atol)
     if m is None:
         return False, None
-    if np.array_equal(points@m, b):
+    if np.array_equal(points@m,b):
         return True, m
     return False, None
 
-def is_partition(points, divisors, atol=1e-8):
+def is_partition(points,divisors,atol=1e-8):
     """
     Determine whether divisors L1,...,Lr can be shifted by principal
     divisors to form a partition of the anticanonical divisor.
     This version avoids repeated np.linalg.solve calls by computing
     the inverse of the basis matrix only once.
     """
-    points=np.asarray(points, dtype=int)
-    divisors=np.asarray(divisors, dtype=int)
+    points=np.asarray(points,dtype=int)
+    divisors=np.asarray(divisors,dtype=int)
     r, n_rays=divisors.shape
     dim=points.shape[1]
-    sta, total_shift=sums_to_anticanonical(points, divisors, atol=atol)
+    sta, total_shift=sums_to_anticanonical(points,divisors,atol=atol)
     if not sta:
-        return False, False, np.zeros((r, dim), dtype=int)
-    basis_indices=np.asarray(basis(points), dtype=int)
+        return False, False, np.zeros((r,dim),dtype=int)
+    basis_indices=np.asarray(basis(points),dtype=int)
     B=points[basis_indices].astype(float)
     try:
         B_inv=np.linalg.inv(B)
     except np.linalg.LinAlgError:
-        return False, True, np.zeros((r, dim), dtype=int)
-    divisors_B=divisors[:, basis_indices]
-    for assignment in product(range(r), repeat=dim):
+        return False, True, np.zeros((r,dim),dtype=int)
+    divisors_B=divisors[:,basis_indices]
+    for assignment in product(range(r),repeat=dim):
         assignment=np.asarray(assignment)
-        shifts=np.zeros((r, dim), dtype=int)
+        shifts=np.zeros((r,dim),dtype=int)
         valid=True
         for a in range(r-1):
             target=(assignment==a).astype(float)
             rhs=target-divisors_B[a]
             m_float=B_inv@rhs
             m=np.rint(m_float).astype(int)
-            if not np.allclose(m_float, m, atol=atol, rtol=0):
+            if not np.allclose(m_float,m,atol=atol,rtol=0):
                 valid=False
                 break
             shifts[a]=m
         if not valid:
             continue
-        shifts[-1]=(total_shift-np.sum(shifts[:-1], axis=0))
+        shifts[-1]=(total_shift-np.sum(shifts[:-1],axis=0))
         shifted=divisors+shifts@points.T
         if not np.all((shifted==0)|(shifted==1)):
             continue
-        if not np.all(np.sum(shifted, axis=0)==1):
+        if not np.all(np.sum(shifted,axis=0)==1):
             continue
         return True, True, shifts
-    shifts=np.zeros((r, dim), dtype=int)
+    shifts=np.zeros((r,dim),dtype=int)
     shifts[-1]=total_shift
     return False, True, shifts
 
-def three_cone_intersections(dual_poly, fan, cones=None):
+def three_cone_intersections(dual_poly,fan,cones=None):
     verts=dual_poly.vertices()
     max_cones=[tuple(sorted(c)) for c in fan.cones()]
     if cones is None:
-        cones=get_lower_dimensional_cones(max_cones, 3)
+        cones=get_lower_dimensional_cones(max_cones,3)
     cones=[tuple(sorted(c)) for c in cones]
     adjacent=defaultdict(list)
     for mc in max_cones:
-        for c in combinations(mc, 3):
+        for c in combinations(mc,3):
             adjacent[tuple(sorted(c))].append(mc)
     tot_intersection=0
     endpoint_O3s=set()
     for c in cones:
         rays=fan.vectors(c)
-        face_verts=verts[np.all(verts@rays.T==-1, axis=1)]
+        face_verts=verts[np.all(verts@rays.T==-1,axis=1)]
         if len(face_verts)==2:
             tot_intersection+=int(np.gcd.reduce(np.abs(face_verts[1]-face_verts[0])))
         elif len(face_verts)==0:
             raise ValueError(f"3-cone {c} is contained in the CY; " "this is not an isolated O3 intersection.")
         for mc in adjacent[c]:
             extra=[r for r in mc if r not in c]
-            if len(extra)!=1:
-                raise ValueError("Expected a simplicial 4-dimensional fan.")
             v=fan.vectors(extra)[0]
             survives=np.any(face_verts@v==-1)
             if not survives:
@@ -2961,26 +2959,26 @@ def chi_fourfold_uplift(F):
     n_O3=three_cone_intersections(F.polytope().dual(),F.CY_ambient_toric_fan(),Z2_fixed_locus(F.CY_ambient_toric_fan(),F.xi(),3))
     return chi_loc+n_O3*6
 
-def cicy4_chern_toric_uplift(F, n, labels=None, seed=12345, n_checks=3,):
+def cicy4_chern_toric_uplift(F,n,labels=None,seed=12345,n_checks=3,):
     """
     Apply cicy4_toric_chern_class directly to an F-theory uplift.
     """
     fan=F.smooth_uplift_ambient_toric_fan()
-    divisors=[F.line_bundle_base_N(), F.line_bundle_weierstrass_N()]
-    return cicy4_toric_chern_class(fan, divisors, n, labels=labels, seed=seed, n_checks=n_checks)
+    divisors=[F.line_bundle_base_N(),F.line_bundle_weierstrass_N()]
+    return cicy4_toric_chern_class(fan,divisors,n,labels=labels,seed=seed,n_checks=n_checks)
 
-def intersecting_points(pts, polytopes):
+def intersecting_points(pts,polytopes):
     """
     Lattice points pts whose toric divisors intersect
     the generic nef-partition CICY with Newton polytopes p1,...,pk.
     """
     vertices=[p.vertices() for p in polytopes]
     out=[]
-    for v in pts[np.any(pts!=0, axis=1)]:
+    for v in pts[np.any(pts!=0,axis=1)]:
         faces=[V[V@v==np.min(V@v)] for V in vertices]
         intersects=True
-        for r in range(1, len(faces)+1):
-            for inds in combinations(range(len(faces)), r):
+        for r in range(1,len(faces)+1):
+            for inds in combinations(range(len(faces)),r):
                 diffs=[faces[i][1:]-faces[i][0] for i in inds]
                 diffs=[d for d in diffs if len(d)]
                 dim=(np.linalg.matrix_rank(np.vstack(diffs))if diffs else 0)
@@ -2991,9 +2989,9 @@ def intersecting_points(pts, polytopes):
                 break
         if intersects:
             out.append(v)
-    return np.array(out, dtype=int)
+    return np.array(out,dtype=int)
 
-def cicy_intersection_numbers_in_basis(fan, L1, L2, basis=None, tol=0.00001,decimals=10):
+def cicy_intersection_numbers_in_basis(fan,L1,L2,basis=None,tol=0.00001,decimals=10):
     """
     Intersection numbers of the codim-2 CICY in a supplied prime-toric-divisor basis.
     Parameters
@@ -3014,18 +3012,18 @@ def cicy_intersection_numbers_in_basis(fan, L1, L2, basis=None, tol=0.00001,deci
     """
     if basis is None:
         basis=basis_H2_toric_fan(fan)
-    labels=np.asarray(fan.vc.labels, dtype=int)
+    labels=np.asarray(fan.vc.labels,dtype=int)
     N=len(labels)
     L1=np.asarray(L1)
     L2=np.asarray(L2)
-    basis=np.asarray(basis, dtype=int)
-    K=fan.intersection_numbers(symmetrize=False, eps=0.0, digits=None,)
-    in_basis=np.zeros(N+1, dtype=bool)
+    basis=np.asarray(basis,dtype=int)
+    K=fan.intersection_numbers(symmetrize=False,eps=0.0,digits=None,)
+    in_basis=np.zeros(N+1,dtype=bool)
     in_basis[basis]=True
-    basis_ind=np.zeros(N+1, dtype=int)
-    basis_ind[basis]=np.arange(1, len(basis)+1)
-    c1=np.concatenate(([0], L1))
-    c2=np.concatenate(([0], L2))
+    basis_ind=np.zeros(N+1,dtype=int)
+    basis_ind[basis]=np.arange(1,len(basis)+1)
+    c1=np.concatenate(([0],L1))
+    c2=np.concatenate(([0],L2))
     if np.count_nonzero(c2)<np.count_nonzero(c1):
         c1, c2=c2, c1
     out=defaultdict(float)
@@ -3062,7 +3060,7 @@ def cicy_intersection_numbers_in_basis(fan, L1, L2, basis=None, tol=0.00001,deci
                 out[newkey]+=val*ci*cj
     if tol is None:
         return dict(out)
-    return {k: np.round(v,decimals) for k, v in out.items() if abs(v)>tol}
+    return {k: np.round(v,decimals) for k,v in out.items() if abs(v)>tol}
 
 def intersection_number_surfaces(IN,basis_len):
     """
@@ -3088,8 +3086,7 @@ def intersection_number_surfaces(IN,basis_len):
                 tt=tuple((ct,)+tuple(np.array(sorted(prod))-1))
                 new_IN[tt]=IN.get(tu)
     return new_IN,surface_dict
-
-def transform_intersections(IN, Q, basis, tol=1e-12):
+def transform_intersections(IN,Q,basis,tol=1e-12):
     """
     Transform a symmetric rank-d tensor under
         t_old = A @ u_new,
@@ -3120,22 +3117,22 @@ def transform_intersections(IN, Q, basis, tol=1e-12):
             integer keys -> integer keys
             length-1 tuple keys -> length-1 tuple keys
     """
-    M=Q[:, basis-1]
+    M=Q[:,basis-1]
     A=np.linalg.inv(M)
     h=A.shape[0]
     if not IN:
         return {}
     first_key=next(iter(IN))
-    if isinstance(first_key, (int, np.integer)):
+    if isinstance(first_key,(int,np.integer)):
         d=1
         integer_rank1_keys=True
     else:
         d=len(first_key)
         integer_rank1_keys=False
-    rows=[[(j+1, A[i, j]) for j in range(h) if abs(A[i, j])>tol] for i in range(h)]
+    rows=[[(j+1,A[i,j]) for j in range(h) if abs(A[i,j])>tol] for i in range(h)]
     out=defaultdict(float)
     for key, kappa in IN.items():
-        if isinstance(key, (int, np.integer)):
+        if isinstance(key,(int,np.integer)):
             key_tuple=(int(key),)
         else:
             key_tuple=tuple(key)
@@ -3160,7 +3157,7 @@ def transform_intersections(IN, Q, basis, tol=1e-12):
             mult//=factorial(n)
         val=coeff/mult
         if abs(val)>tol:
-            if np.isclose(val, round(val), atol=tol):
+            if np.isclose(val,round(val),atol=tol):
                 val=int(round(val))
             if d==1 and integer_rank1_keys:
                 result[key[0]]=val
@@ -3168,153 +3165,163 @@ def transform_intersections(IN, Q, basis, tol=1e-12):
                 result[key]=val
     return result
 
-def mori_cone_in_glsm_basis(fan, Q, tol=1e-10):
+def tensor_symm_in_basis(tensor,basis,Q=None,tol=1e-12):
+    """
+    Transform a symmetric divisor tensor from prime-toric divisors
+    to a chosen prime-toric or GLSM divisor basis.
+    Prime-toric indices are 1-based.
+    """
+    if not tensor:
+        return {}
+    basis=np.asarray(basis,dtype=int)
+    h=len(basis)
+    integer_keys=all(isinstance(k,(int,np.integer)) for k in tensor)
+    tensor={tuple(sorted((int(k),) if isinstance(k,(int,np.integer)) else k)): v for k,v in tensor.items()}
+    rank=len(next(iter(tensor)))
+    T=np.zeros((h,)*rank,dtype=float)
+    for inds in product(range(h),repeat=rank):
+        key=tuple(sorted(basis[list(inds)]))
+        T[inds]=tensor.get(key,0)
+    if Q is not None:
+        A=np.linalg.inv(np.asarray(Q)[:,basis-1])
+        for _ in range(rank):
+            T=np.tensordot(T,A,axes=(0,0))
+    result={}
+    for inds in combinations_with_replacement(range(h),rank):
+        value=T[inds]
+        if abs(value)<tol:
+            continue
+        if abs(value-round(value))<tol:
+            value=int(round(value))
+        key=tuple(i+1 for i in inds)
+        if rank==1 and integer_keys:
+            key=key[0]
+        result[key]=value
+    return result
+
+def tensor_symm_in_prime_basis(tensor,basis):
+    if not tensor:
+        return {}
+    basis_map={int(i):a+1 for a,i in enumerate(basis)}
+    if isinstance(next(iter(tensor)),(int,np.integer)):
+        return {basis_map[i]:v for i,v in tensor.items() if i in basis_map}
+    result={}
+    for key,value in tensor.items():
+        if all(i in basis_map for i in key):
+            new=tuple(sorted(basis_map[i] for i in key))
+            result[new]=value
+    return result
+
+def tensor_symm_in_glsm_basis(tensor,Q,basis,tol=1e-12):
+    """Transform a symmetric tensor from a prime-toric basis to the GLSM basis."""
+    if not tensor:
+        return {}
+    basis=np.asarray(basis,int)
+    integer_keys=isinstance(next(iter(tensor)),(int,np.integer))
+    if integer_keys:
+        tensor={(k,):v for k,v in tensor.items()}
+    else:
+        tensor={tuple(sorted(k)):v for k,v in tensor.items()}
+    rank=len(next(iter(tensor)))
+    h=len(basis)
+    A=np.linalg.inv(np.asarray(Q)[:,basis-1])
+    result={}
+    for new in combinations_with_replacement(range(h),rank):
+        value=0
+        for old,c in tensor.items():
+            old=tuple(i-1 for i in old)
+            for p in set(permutations(old)):
+                value+=c*np.prod([A[i,j] for i,j in zip(p,new)])
+        if abs(value)<tol:
+            continue
+        if abs(value-round(value))<tol:
+            value=int(round(value))
+        key=new[0]+1 if integer_keys else tuple(i+1 for i in new)
+        result[key]=value
+    return result
+
+def mori_cone_in_glsm_basis(fan,Q,tol=1e-10):
     """
     Mori cone of a secondary-fan phase, expressed in the
     basis given by the rows of Q.
     """
-    Q=np.asarray(Q, dtype=float)
-    H=np.asarray(fan.secondary_cone_hyperplanes(), dtype=float)
-    C=np.linalg.lstsq(Q.T, H.T, rcond=None)[0].T
-    if not np.allclose(C@Q, H, atol=tol, rtol=tol):
+    Q=np.asarray(Q,dtype=float)
+    H=np.asarray(fan.secondary_cone_hyperplanes(),dtype=float)
+    C=np.linalg.lstsq(Q.T,H.T,rcond=None)[0].T
+    if not np.allclose(C@Q,H,atol=tol,rtol=tol):
         err=np.max(np.abs(C@Q-H))
         raise ValueError(f"Secondary-cone normals are not in the row span of Q " f"(max residual {err:.2e}).")
     C[np.abs(C)<tol]=0
     return Cone(rays=C)
 
-def cygv_intnums_prime_surfaces(IN4, Q):
-    Q=np.asarray(Q, dtype=object)
+def cygv_intnums_prime_surfaces(IN4,Q):
+    Q=np.asarray(Q,dtype=object)
     h, n_toric=Q.shape
-    prime_pairs=list(combinations(range(n_toric), 2))
+    prime_pairs=list(combinations(range(n_toric),2))
     intnums={}
     surface_map={}
-    for s, (A, B) in enumerate(prime_pairs):
-        surface_map[s]=(A+1, B+1)
+    for s, (A,B) in enumerate(prime_pairs):
+        surface_map[s]=(A+1,B+1)
         for i in range(h):
-            for j in range(i, h):
+            for j in range(i,h):
                 val=0
                 for a in range(h):
                     for b in range(h):
-                        key=tuple(sorted((a+1, b+1, i+1, j+1,)))
-                        kappa=IN4.get(key, 0)
-                        val+=Q[a, A]*Q[b, B]*kappa
+                        key=tuple(sorted((a+1,b+1,i+1,j+1,)))
+                        kappa=IN4.get(key,0)
+                        val+=Q[a,A]*Q[b,B]*kappa
                 if val!=0:
-                    intnums[(s, i, j)]=int(val)
+                    intnums[(s,i,j)]=int(val)
     return intnums, surface_map
 import numpy as np
 
 def cicy4_toric_chern_class(fan,divisors,n):
     """
-    Compute the Chern tensor of a codimension-2 Calabi-Yau fourfold
-        X = L1 ∩ L2
+    Chern tensor c_n(X) for a codimension-2 CY fourfold X=L1∩L2
     in a 6-dimensional simplicial toric variety.
-    The defining divisors are assumed to satisfy
-        L1 + L2 = -K_V.
-    No intersection numbers are computed.
-    Parameters
-    ----------
-    fan : cytools.vector_config.fan.Fan
-        Fan of the 6-dimensional ambient toric variety.
-    divisors : list of two np.ndarray
-        Coefficients of L1 and L2 in the prime-toric divisor basis:
-            L_A = sum_i divisors[A][i] D_i.
-        The ordering must agree with fan.vectors().
-    n : int
-        Chern class to compute.
     Returns
     -------
-    dict, int, or float
-        Rank-2 tensors have tuple keys.
-        Rank-1 tensors have integer keys.
-        Rank-0 tensors are returned directly as a number.
-        Prime-toric divisor indices are 1-based.
+    n=1 : 0
+    n=2 : {(i,j): value}
+    n=3 : {i: value}
+    n=4 : number
+    Prime-toric divisor indices are 1-based.
     """
-    vecs=np.asarray(fan.vectors(),dtype=np.int64)
-    nrays,ambient_dim=vecs.shape
-    if ambient_dim!=6:
-        raise ValueError("This implementation is specialized to a " "6-dimensional ambient toric variety.")
-    divs=np.asarray(divisors)
+    if n not in (1,2,3,4):
+        raise ValueError("n must be 1, 2, 3, or 4.")
     if n==1:
-        return {}
-    divs=divs.astype(np.longdouble,copy=False)
-    cones=np.asarray(fan.cones(as_inds=True), dtype=np.int64)
-    M=np.transpose(vecs[cones], (0,2,1))
-    Mf=M.astype(np.float64)
-    det_float=np.linalg.det(Mf)
-    det=np.rint(det_float).astype(np.int64)
-    invM=np.linalg.inv(Mf)
-    adj=np.rint(invM*det[:,None,None]).astype(np.int64)
-    lhs=M@adj
-    rhs=(det[:,None,None]*np.eye(6,dtype=np.int64)[None,:,:])
-    mult=np.abs(det).astype(np.longdouble)
-    adj_ld=adj.astype(np.longdouble)
-    weights=None
+        return 0
+    vecs=np.asarray(fan.vectors(),float)
+    divs=np.asarray(divisors,float)
+    cones=np.asarray(fan.cones(as_inds=True))
+    if vecs.shape[1]!=6:
+        raise ValueError("Ambient toric variety must be 6-dimensional.")
+    M=vecs[cones].transpose(0,2,1)
     for k in range(2,50):
-        xi=np.array((1,k,k**2,k**3,k**4,k**5), dtype=np.longdouble)
-        w=np.einsum("cij,j->ci", adj_ld, xi, optimize=True)
-        if np.all(w!=0):
-            weights=w
+        xi=np.array([1,k,k**2,k**3,k**4,k**5],float)
+        weights=np.linalg.inv(M)@xi
+        if np.all(np.abs(weights)>1e-10):
             break
-    coeffs=np.take(divs, cones, axis=1)
-    ell=np.einsum("acj,cj->ca", coeffs, weights, optimize=True)
-    ell1=ell[:,0]
-    ell2=ell[:,1]
-    w2=weights*weights
-    e12=ell1*ell1
-    e22=ell2*ell2
+    ell=np.sum(divs[:,cones]*weights[None,:,:],axis=2).T
+    l1, l2=ell.T
     if n==2:
-        p2=np.sum(w2,axis=1)-e12-e22
-        cn=-p2/2
+        chern=-(np.sum(weights**2,axis=1)-l1**2-l2**2)/2
     elif n==3:
-        w3=w2*weights
-        p3=(np.sum(w3,axis=1)-e12*ell1-e22*ell2)
-        cn=p3/3
-    else:  # n == 4
-        p2=np.sum(w2,axis=1)-e12-e22
-        w4=w2*w2
-        p4=(np.sum(w4,axis=1)-e12*e12-e22*e22)
-        cn=p2*p2/8-p4/4
-    euler=np.prod(weights, axis=1)
-    base=(cn*ell1*ell2/(mult*euler))
-    if n==4:
-        value=np.sum(base, dtype=np.longdouble)
-        rounded=np.rint(value)
-        if np.isclose(value, rounded, rtol=1e-9, atol=1e-9):
-            return int(rounded)
-        return float(value)
-    if n==3:
-        vals=base[:,None]*weights
-        result=np.zeros(nrays, dtype=np.longdouble)
-        np.add.at(result, cones.ravel(), vals.ravel())
-        out={}
-        for i,val in enumerate(result):
-            if np.isclose(val, 0, rtol=0, atol=1e-9):
-                continue
-            rounded=np.rint(val)
-            if np.isclose(val, rounded, rtol=1e-9, atol=1e-9):
-                out[i+1]=int(rounded)
-            else:
-                out[i+1]=float(val)
-        return out
-    a,b=np.triu_indices(6)
-    vals=(base[:,None]*weights[:,a]*weights[:,b])
-    i=cones[:,a]
-    j=cones[:,b]
-    lo=np.minimum(i,j)
-    hi=np.maximum(i,j)
-    flat_keys=(lo*nrays+hi).ravel()
-    result=np.zeros(nrays*nrays, dtype=np.longdouble)
-    np.add.at(result, flat_keys, vals.ravel())
-    out={}
-    nonzero=np.flatnonzero(~np.isclose(result, 0, rtol=0, atol=1e-9))
-    for ind in nonzero:
-        i=ind//nrays
-        j=ind%nrays
-        val=result[ind]
-        rounded=np.rint(val)
-        if np.isclose(val, rounded, rtol=1e-9, atol=1e-9):
-            value=int(rounded)
-        else:
-            value=float(val)
-        out[(i+1,j+1)]=value
-    return out
+        chern=(np.sum(weights**3,axis=1)-l1**3-l2**3)/3
+    else:
+        p2=np.sum(weights**2,axis=1)-l1**2-l2**2
+        p4=np.sum(weights**4,axis=1)-l1**4-l2**4
+        chern=p2**2/8-p4/4
+    base=chern*l1*l2/(np.abs(np.linalg.det(M))*np.prod(weights,axis=1))
+    rank=4-n
+    if rank==0:
+        return round(np.sum(base))
+    result=defaultdict(float)
+    for cone, w, coeff in zip(cones,weights,base):
+        for inds in combinations_with_replacement(range(6),rank):
+            key=tuple(sorted(cone[list(inds)]+1))
+            result[key]+=coeff*np.prod(w[list(inds)])
+    result={key: round(value) for key,value in result.items() if abs(value)>1e-8}
+    if rank==1:
+        result={key[0]: value for key,value in result.items()}
+    return result
