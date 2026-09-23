@@ -1745,18 +1745,17 @@ class F_Theory_Uplift():
 
     def intersection_numbers_N(self):
         if self.__intersection_numbers_N is None:
-            self.__intersection_numbers_N=UF.cicy_intersection_numbers_in_basis(self.smooth_uplift_ambient_toric_fan(),self.line_bundle_base_N(),self.line_bundle_weierstrass_N(),self.basis_homology_N())
+            self.__intersection_numbers_N=UF.cy_intersection_numbers(self.smooth_uplift_ambient_toric_fan(),[self.line_bundle_base_N(),self.line_bundle_weierstrass_N()],self.basis_homology_N())
         return self.__intersection_numbers_N
 
     def intersection_numbers_M(self):
         if not self.is_nef_partition():
             raise ValueError("Intersection numbers on the M side can only be computed for nef partitions")
         if self.__intersection_numbers_M is None:
-            lb1=np.zeros(len(self.intersecting_divisors_M(as_labels=True)),dtype=int)
-            lb2=lb1.copy()
-            lb1[:len(self.intersecting_divisors_B_M(as_labels=True))]=1
-            lb2[:-len(self.intersecting_divisors_W_M(as_labels=True))]=1
-            self.__intersection_numbers_M=UF.cicy_intersection_numbers_in_basis(self.M_conv_toric_fan(),lb1,lb2,self.basis_homology_M())
+            LB1=np.zeros(len(self.intersecting_divisors_M(as_labels=True)),dtype=int)
+            LB1[:len(self.intersecting_divisors_B_M(as_labels=True))]=1
+            LB2=np.ones(len(LB1),dtype=int)-LB1
+            self.__intersection_numbers_M=UF.cy_intersection_numbers(self.M_conv_toric_fan(),[LB1,LB2],self.basis_homology_M())
         return self.__intersection_numbers_M
 
 def fetch_orientifolds(only_regular: bool=True, only_nef_decomposition: bool=False,h11: int = None,h12: int = None,h13: int = None,

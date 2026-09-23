@@ -2842,7 +2842,7 @@ def get_E_function(F,backend="auto",verbose=False,hodge_only=True):
 
 def _integer_solve(B,b,atol=1e-8):
     """
-    Solve B @ x = b numerically and return x if it is sufficiently
+    Solve Bx = b numerically and return x if it is sufficiently
     close to an integer vector.
     """
     B=np.asarray(B,dtype=float)
@@ -2991,77 +2991,6 @@ def intersecting_points(pts,polytopes):
             out.append(v)
     return np.array(out,dtype=int)
 
-def cicy_intersection_numbers_in_basis(fan,L1,L2,basis=None,tol=0.00001,decimals=10):
-    """
-    Intersection numbers of the codim-2 CICY in a supplied prime-toric-divisor basis.
-    Parameters
-    ----------
-    fan : CYTools Fan
-        Ambient toric fan. Ray labels must be 1,...,N.
-    L1, L2 : array-like, shape (N,)
-        Coefficients of the defining divisors in the prime divisor basis.
-    basis : array-like
-        Labels of the prime toric divisors forming the divisor basis,
-        e.g. [2, 5, 7, 9, 11, 13].
-    tol : float or None
-        If given, discard output entries with absolute value <= tol.
-    Returns
-    -------
-    dict
-        CICY intersection tensor in the supplied divisor basis.
-    """
-    if basis is None:
-        basis=basis_H2_toric_fan(fan)
-    labels=np.asarray(fan.vc.labels,dtype=int)
-    N=len(labels)
-    L1=np.asarray(L1)
-    L2=np.asarray(L2)
-    basis=np.asarray(basis,dtype=int)
-    K=fan.intersection_numbers(symmetrize=False,eps=0.0,digits=None,)
-    in_basis=np.zeros(N+1,dtype=bool)
-    in_basis[basis]=True
-    basis_ind=np.zeros(N+1,dtype=int)
-    basis_ind[basis]=np.arange(1,len(basis)+1)
-    c1=np.concatenate(([0],L1))
-    c2=np.concatenate(([0],L2))
-    if np.count_nonzero(c2)<np.count_nonzero(c1):
-        c1, c2=c2, c1
-    out=defaultdict(float)
-    for key, val in K.items():
-        if 0 in key:
-            continue
-        n_nonbasis=sum(not in_basis[i] for i in key)
-        if n_nonbasis>2:
-            continue
-        previous=None
-        for p, i in enumerate(key):
-            if i==previous:
-                continue
-            previous=i
-            ci=c1[i]
-            if ci==0:
-                continue
-            n_nonbasis_1=n_nonbasis-int(not in_basis[i])
-            if n_nonbasis_1>1:
-                continue
-            rem1=key[:p]+key[p+1:]
-            previous2=None
-            for q, j in enumerate(rem1):
-                if j==previous2:
-                    continue
-                previous2=j
-                cj=c2[j]
-                if cj==0:
-                    continue
-                if n_nonbasis_1-int(not in_basis[j])!=0:
-                    continue
-                rem2=rem1[:q]+rem1[q+1:]
-                newkey=tuple(sorted(basis_ind[k] for k in rem2))
-                out[newkey]+=val*ci*cj
-    if tol is None:
-        return dict(out)
-    return {k: np.round(v,decimals) for k,v in out.items() if abs(v)>tol}
-
 def intersection_number_surfaces(IN,basis_len):
     """
     Calculates intersection numbers of a CICY with ambient toric divisors.
@@ -3086,84 +3015,6 @@ def intersection_number_surfaces(IN,basis_len):
                 tt=tuple((ct,)+tuple(np.array(sorted(prod))-1))
                 new_IN[tt]=IN.get(tu)
     return new_IN,surface_dict
-# def transform_intersections(IN,Q,basis,tol=1e-12):
-#     """
-#     Transform a symmetric rank-d tensor under
-#         t_old = A @ u_new,
-#         A = inv(Q[:, basis-1]).
-#     Parameters
-#     ----------
-#     IN : dict
-#         Symmetric tensor dictionary.
-#         For rank d >= 2, keys are tuples, e.g.
-#             (1, 1, 2, 5): value
-#         For rank d = 1, keys may be either
-#             1: value
-#         or
-#             (1,): value
-#         Indices are assumed to be 1-based.
-#     Q : array_like
-#         GLSM matrix.
-#     basis : array_like
-#         1-based column indices defining the divisor basis.
-#     tol : float
-#         Numerical tolerance.
-#     Returns
-#     -------
-#     dict
-#         Tensor components in the new basis.
-#         For rank-1 tensors, the output uses the same key convention
-#         as the input:
-#             integer keys -> integer keys
-#             length-1 tuple keys -> length-1 tuple keys
-#     """
-#     M=Q[:,basis-1]
-#     A=np.linalg.inv(M)
-#     h=A.shape[0]
-#     if not IN:
-#         return {}
-#     first_key=next(iter(IN))
-#     if isinstance(first_key,(int,np.integer)):
-#         d=1
-#         integer_rank1_keys=True
-#     else:
-#         d=len(first_key)
-#         integer_rank1_keys=False
-#     rows=[[(j+1,A[i,j]) for j in range(h) if abs(A[i,j])>tol] for i in range(h)]
-#     out=defaultdict(float)
-#     for key, kappa in IN.items():
-#         if isinstance(key,(int,np.integer)):
-#             key_tuple=(int(key),)
-#         else:
-#             key_tuple=tuple(key)
-#         counts=Counter(key_tuple)
-#         mult=factorial(d)
-#         for n in counts.values():
-#             mult//=factorial(n)
-#         poly={(): kappa*mult}
-#         for i in key_tuple:
-#             newpoly=defaultdict(float)
-#             for mon, coeff in poly.items():
-#                 for j, a in rows[i-1]:
-#                     newpoly[tuple(sorted(mon+(j,)))]+=coeff*a
-#             poly=newpoly
-#         for mon, coeff in poly.items():
-#             out[mon]+=coeff
-#     result={}
-#     for key, coeff in out.items():
-#         counts=Counter(key)
-#         mult=factorial(d)
-#         for n in counts.values():
-#             mult//=factorial(n)
-#         val=coeff/mult
-#         if abs(val)>tol:
-#             if np.isclose(val,round(val),atol=tol):
-#                 val=int(round(val))
-#             if d==1 and integer_rank1_keys:
-#                 result[key[0]]=val
-#             else:
-#                 result[key]=val
-#     return result
 
 def tensor_symm_in_basis(tensor,basis,Q=None,tol=1e-12):
     """
@@ -3200,8 +3051,9 @@ def tensor_symm_in_basis(tensor,basis,Q=None,tol=1e-12):
     return result
 
 def tensor_symm_in_prime_basis(tensor,basis):
-    if not tensor:
-        return {}
+    """
+    Transforms a symmetric tensor of all prime torics into the basis of a subset of prime torics.
+    """
     basis_map={int(i):a+1 for a,i in enumerate(basis)}
     if isinstance(next(iter(tensor)),(int,np.integer)):
         return {basis_map[i]:v for i,v in tensor.items() if i in basis_map}
@@ -3240,17 +3092,21 @@ def tensor_symm_in_glsm_basis(tensor,Q,basis,tol=1e-12):
         result[key]=value
     return result
 
-def mori_cone_in_glsm_basis(fan,Q,tol=1e-10):
+def mori_cone_in_glsm_basis(Q,fan=None,H=None,tol=1e-10):
     """
     Mori cone of a secondary-fan phase, expressed in the
     basis given by the rows of Q.
     """
+    if H is None:
+        if fan is None:
+            raise ValueError("Either fan or H has to be provided")
+        H=np.asarray(fan.secondary_cone_hyperplanes(),dtype=float)
+    else:
+        H=np.asarray(H,dtype=float)
     Q=np.asarray(Q,dtype=float)
-    H=np.asarray(fan.secondary_cone_hyperplanes(),dtype=float)
     C=np.linalg.lstsq(Q.T,H.T,rcond=None)[0].T
     if not np.allclose(C@Q,H,atol=tol,rtol=tol):
-        err=np.max(np.abs(C@Q-H))
-        raise ValueError(f"Secondary-cone normals are not in the row span of Q " f"(max residual {err:.2e}).")
+        raise ValueError("Secondary-cone normals are not in the row span of Q")
     C[np.abs(C)<tol]=0
     return Cone(rays=C)
 
@@ -3273,7 +3129,6 @@ def cygv_intnums_prime_surfaces(IN4,Q):
                 if val!=0:
                     intnums[(s,i,j)]=int(val)
     return intnums, surface_map
-import numpy as np
 
 def cicy4_toric_chern_class(fan,divisors,n):
     """
@@ -3287,8 +3142,6 @@ def cicy4_toric_chern_class(fan,divisors,n):
     n=4 : number
     Prime-toric divisor indices are 1-based.
     """
-    if n not in (1,2,3,4):
-        raise ValueError("n must be 1, 2, 3, or 4.")
     if n==1:
         return 0
     vecs=np.asarray(fan.vectors(),float)
@@ -3325,3 +3178,70 @@ def cicy4_toric_chern_class(fan,divisors,n):
     if rank==1:
         result={key[0]: value for key,value in result.items()}
     return result
+
+def cy_intersection_numbers(fan,divisors,basis=None,Q=None,in_basis=False):
+    out=cy_intersection_numbers_all_prime_torics(fan,divisors)
+    if in_basis or Q is not None or basis is not None:
+        if basis is None:
+            basis=basis_H2_toric_fan(fan)
+    if basis is not None:
+        out=tensor_symm_in_prime_basis(out,basis)
+        if Q is not None:
+            out=tensor_symm_in_glsm_basis(out,Q,basis)
+    return out
+
+def cy_intersection_numbers_all_prime_torics(fan,divisors,tol=1e-5,decimals=10):
+    """
+    Intersection numbers of the complete intersection X = D^(1) ∩ ... ∩ D^(r)
+    in terms of all prime toric divisors:
+        kappa_{a_1..a_d} = sum_{i_1..i_r} c^(1)_{i_1} ... c^(r)_{i_r} K_{i_1..i_r a_1..a_d}
+    Parameters
+    ----------
+    fan : CYTools Fan
+        Ray labels 1,...,N; fan.intersection_numbers() returns {sorted tuple: value},
+        where label 0 is the canonical divisor (ignored here).
+    divisors : list of array-like, each of shape (N,)
+        Coefficients of D^(k) = sum_i c^(k)_i D_i, ordered by label 1,...,N.
+    tol : float or None
+        If given, drop entries with |value| <= tol and round to `decimals`.
+    Returns
+    -------
+    dict
+        {sorted tuple of labels in 1,...,N: value}; absent keys are zero.
+    """
+    K=fan.intersection_numbers()
+    keys=np.array(list(K),dtype=np.int64)
+    vals=np.fromiter(K.values(),dtype=float,count=len(K))
+    keep=keys[:,0]!=0
+    keys, vals=keys[keep], vals[keep]
+    n, r=keys.shape[1], len(divisors)
+    C=np.zeros((r,len(fan.vc.labels)+1))
+    C[:,1:]=divisors
+    same_prev=np.zeros(keys.shape,dtype=bool)
+    same_prev[:,1:]=keys[:,1:]==keys[:,:-1]
+    out_keys, out_vals=[], []
+    for pos in permutations(range(n),r):
+        rows=np.ones(len(vals),dtype=bool)
+        for k, p in enumerate(pos):
+            if p>0 and p-1 not in pos[:k]:
+                rows&=~same_prev[:,p]
+        w=vals[rows]*np.prod([C[k,keys[rows,p]] for k,p in enumerate(pos)],axis=0)
+        nz=w!=0
+        out_keys.append(keys[rows][nz][:,[q for q in range(n) if q not in pos]])
+        out_vals.append(w[nz])
+    ukeys, inv=np.unique(np.concatenate(out_keys),axis=0,return_inverse=True)
+    sums=np.bincount(inv.ravel(),weights=np.concatenate(out_vals),minlength=len(ukeys))
+    if tol is not None:
+        sums=np.round(sums,decimals)
+    return {tuple(key): float(v) for key,v in zip(ukeys.tolist(),sums) if tol is None or abs(v)>tol}
+
+def KC_ext(vc,Q):
+    H,_=vc.secondary_fan(only_fine=True)
+    KC_rays=[]
+    for h in H:
+        MC=mori_cone_in_glsm_basis(Q,H=h)
+        KC=MC.dual()
+        KC_rays.append(KC.rays())
+    return Cone(np.unique(np.vstack(KC_rays),axis=0))
+def M_cap(vc,Q):
+    return KC_ext(vc,Q).dual()
