@@ -3008,7 +3008,7 @@ def intersection_number_surfaces(IN,basis_len):
     surface_dict={}
     for c in combinations_with_replacement(in_basis_tuple,2):
         ct+=1
-        surface_dict[ct]=tuple(np.array(c)-1)
+        surface_dict[ct]=tuple(np.array(c))
         for prod in product(in_basis_tuple,in_basis_tuple):
             tu=tuple(sorted(c+prod))
             if tu in IN.keys():
@@ -3022,33 +3022,10 @@ def tensor_symm_in_basis(tensor,basis,Q=None,tol=1e-12):
     to a chosen prime-toric or GLSM divisor basis.
     Prime-toric indices are 1-based.
     """
-    if not tensor:
-        return {}
-    basis=np.asarray(basis,dtype=int)
-    h=len(basis)
-    integer_keys=all(isinstance(k,(int,np.integer)) for k in tensor)
-    tensor={tuple(sorted((int(k),) if isinstance(k,(int,np.integer)) else k)): v for k,v in tensor.items()}
-    rank=len(next(iter(tensor)))
-    T=np.zeros((h,)*rank,dtype=float)
-    for inds in product(range(h),repeat=rank):
-        key=tuple(sorted(basis[list(inds)]))
-        T[inds]=tensor.get(key,0)
+    out=tensor_symm_in_prime_basis(tensor,basis)
     if Q is not None:
-        A=np.linalg.inv(np.asarray(Q)[:,basis-1])
-        for _ in range(rank):
-            T=np.tensordot(T,A,axes=(0,0))
-    result={}
-    for inds in combinations_with_replacement(range(h),rank):
-        value=T[inds]
-        if abs(value)<tol:
-            continue
-        if abs(value-round(value))<tol:
-            value=int(round(value))
-        key=tuple(i+1 for i in inds)
-        if rank==1 and integer_keys:
-            key=key[0]
-        result[key]=value
-    return result
+        out=tensor_symm_in_glsm_basis(out,Q,basis,tol=tol)
+    return out
 
 def tensor_symm_in_prime_basis(tensor,basis):
     """
@@ -3181,13 +3158,11 @@ def cicy4_toric_chern_class(fan,divisors,n):
 
 def cy_intersection_numbers(fan,divisors,basis=None,Q=None,in_basis=False):
     out=cy_intersection_numbers_all_prime_torics(fan,divisors)
-    if in_basis or Q is not None or basis is not None:
+    if in_basis or Q is not None:
         if basis is None:
             basis=basis_H2_toric_fan(fan)
     if basis is not None:
-        out=tensor_symm_in_prime_basis(out,basis)
-        if Q is not None:
-            out=tensor_symm_in_glsm_basis(out,Q,basis)
+        return tensor_symm_in_basis(out,basis,Q)
     return out
 
 def cy_intersection_numbers_all_prime_torics(fan,divisors,tol=1e-5,decimals=10):
@@ -3243,5 +3218,6 @@ def KC_ext(vc,Q):
         KC=MC.dual()
         KC_rays.append(KC.rays())
     return Cone(np.unique(np.vstack(KC_rays),axis=0))
-def M_cap(vc,Q):
+
+def MC_ext(vc,Q):
     return KC_ext(vc,Q).dual()
