@@ -43,6 +43,8 @@ from sympy import Matrix, ZZ, lcm, fraction
 from sympy.matrices.normalforms import smith_normal_decomp
 from scipy.optimize import nnls
 from scipy.optimize import milp, LinearConstraint
+import scipy.sparse as sps
+from numpy.typing import ArrayLike
 # CYTools imports
 from cytools import Polytope, h_polytope, Cone
 from cytools.polytope import poly_v_to_h
@@ -3025,7 +3027,7 @@ def intersection_number_surfaces(IN: Mapping[tuple[int,...],int|float],basis_len
     # sort to reproduce the key order of the former O(n^4) loop over (surface, i, j)
     return dict(sorted(new_IN.items())),surface_dict
 
-def tensor_symm_in_basis(tensor,basis,Q=None,tol=1e-12):
+def tensor_symm_in_basis(tensor,basis,Q=None,tol=1e-5):
     """
     Transform a symmetric divisor tensor from prime-toric divisors
     to a chosen prime-toric or GLSM divisor basis.
@@ -3050,8 +3052,41 @@ def tensor_symm_in_prime_basis(tensor,basis):
             result[new]=value
     return result
 
-def tensor_symm_in_glsm_basis(tensor,Q,basis,tol=1e-12):
-    """Transform a symmetric tensor from a prime-toric basis to the GLSM basis."""
+def _sorted_index_tuples(h: int,rank: int)->np.ndarray:
+    """
+    **Description:**
+    Vectorized `np.array(list(combinations_with_replacement(range(h),rank)))`.
+    **Arguments:**
+    - `h (int)`: Number of indices.
+    - `rank (int)`: Length of the tuples (at least 1).
+    **Returns:**
+    - `np.ndarray`: All non-decreasing index tuples, one per row, in lexicographic order.
+    """
+    idx=np.arange(h)[:,None]
+    for _ in range(rank-1):
+        last=idx[:,-1]
+        counts=h-last
+        starts=np.cumsum(counts)-counts
+        new_col=np.repeat(last,counts)+np.arange(counts.sum())-np.repeat(starts,counts)
+        idx=np.column_stack([np.repeat(idx,counts,axis=0),new_col])
+    return idx
+
+def tensor_symm_in_glsm_basis(tensor: Mapping[int,int|float]|Mapping[tuple[int,...],int|float],Q: ArrayLike,basis: ArrayLike,tol: float=1e-5,block_bytes: int=2**27)->dict[int,int|float]|dict[tuple[int,...],int|float]:
+    """
+    **Description:**
+    Transform a symmetric tensor from a prime-toric basis to the GLSM basis.
+    The tensor is contracted in every slot with the inverse of the basis columns `Q[:,basis-1]`.
+    The first slot is contracted directly from the sparse input, in blocks of output indices a; the remaining
+    slots then only need the columns b>=a, so the dense h^rank tensor is never formed.
+    **Arguments:**
+    - `tensor (Mapping[int,int|float]|Mapping[tuple[int,...],int|float])`: The symmetric tensor in the prime toric basis, keyed by one-indexed basis positions (rank 1) or tuples of them.
+    - `Q (ArrayLike)`: GLSM charge matrix (rows: GLSM charges, columns: prime toric divisors).
+    - `basis (ArrayLike)`: The one-indexed labels of the prime toric basis divisors.
+    - `tol (float)`: Entries with absolute value below `tol` are dropped and entries within `tol` of an integer are rounded. Defaults to `1e-5`.
+    - `block_bytes (int)`: Approximate memory of one block of partially contracted slices. Defaults to `2**27`.
+    **Returns:**
+    - `dict[int,int|float]|dict[tuple[int,...],int|float]`: The tensor in the GLSM basis, keyed by one-indexed GLSM indices (rank 1) or sorted tuples of them; empty if `tensor` is empty.
+    """
     if not tensor:
         return {}
     basis=np.asarray(basis,int)
@@ -3063,20 +3098,36 @@ def tensor_symm_in_glsm_basis(tensor,Q,basis,tol=1e-12):
     rank=len(next(iter(tensor)))
     h=len(basis)
     A=np.linalg.inv(np.asarray(Q)[:,basis-1])
-    result={}
-    for new in combinations_with_replacement(range(h),rank):
-        value=0
-        for old,c in tensor.items():
-            old=tuple(i-1 for i in old)
-            for p in set(permutations(old)):
-                value+=c*np.prod([A[i,j] for i,j in zip(p,new)])
-        if abs(value)<tol:
-            continue
-        if abs(value-round(value))<tol:
-            value=int(round(value))
-        key=new[0]+1 if integer_keys else tuple(i+1 for i in new)
-        result[key]=value
-    return result
+    # all distinct orderings of the sorted keys, as a sparse (first slot) x (remaining slots) matrix
+    old=np.array(list(tensor),dtype=np.int64).reshape(-1,rank)-1
+    vals=np.array(list(tensor.values()),dtype=float)
+    lin=np.concatenate([np.ravel_multi_index(old[:,p].T,(h,)*rank) for p in permutations(range(rank))])
+    lin,pos=np.unique(lin,return_index=True)
+    vals=np.tile(vals,factorial(rank))[pos]
+    first,rest=np.divmod(lin,h**(rank-1))
+    T=sps.csr_matrix((vals,(first,rest)),shape=(h,h**(rank-1)))
+    blk=max(1,block_bytes//(8*h**(rank-1)))
+    keys,values=[],[]
+    for a0 in range(0,h,blk):
+        a1=min(a0+blk,h)
+        S=np.asarray(A[:,a0:a1].T@T).reshape((a1-a0,)+(h,)*(rank-1))
+        Aa=A[:,a0:]
+        for _ in range(rank-1):
+            S=np.tensordot(S,Aa,axes=([1],[0]))
+        for a in range(a0,a1):
+            idx=_sorted_index_tuples(h-a,rank-1)+a if rank>1 else np.empty((1,0),dtype=np.intp)
+            v=np.atleast_1d(S[a-a0][tuple((idx-a0).T)])
+            keep=np.abs(v)>=tol
+            keys.append(np.column_stack([np.full(keep.sum(),a),idx[keep]]))
+            values.append(v[keep])
+    keys=np.concatenate(keys)+1
+    values=np.concatenate(values)
+    rounded=np.rint(values)
+    is_int=np.abs(values-rounded)<tol
+    out=values.astype(object)
+    out[is_int]=rounded[is_int].astype(np.int64).astype(object)
+    keys=keys[:,0].tolist() if integer_keys else zip(*keys.T.tolist())
+    return dict(zip(keys,out.tolist()))
 
 def mori_cone_in_glsm_basis(Q,fan=None,H=None,tol=1e-10):
     """
