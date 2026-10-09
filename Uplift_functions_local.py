@@ -2991,30 +2991,39 @@ def intersecting_points(pts,polytopes):
             out.append(v)
     return np.array(out,dtype=int)
 
-def intersection_number_surfaces(IN,basis_len):
+def intersection_number_surfaces(IN: Mapping[tuple[int,...],int|float],basis_len: int|None=None)->tuple[dict[tuple[int,int,int],int|float],dict[int,tuple[int,int]]]:
     """
+    **Description:**
     Calculates intersection numbers of a CICY with ambient toric divisors.
-    Args:
-        IN: Dictionary of intersection numbers of the CICY with ambient divisors.
-        basis_len: Length of the basis of ambient divisors.
-    Returns:
-        A tuple containing:
-            - new_IN: Dictionary of intersection numbers with basis vectors.
-            - surface_dict: Dictionary mapping basis vectors to surface indices.
+    The quadruple intersection numbers are rewritten as intersection numbers of the surfaces D_a*D_b (a <= b) with pairs of basis divisors.
+    Runs in O(len(IN)) by splitting each sorted 4-tuple into its (at most six) surface/divisor-pair decompositions.
+    **Arguments:**
+    - `IN (Mapping[tuple[int,...],int|float])`: Dictionary of intersection numbers of the CICY with ambient divisors, keyed by sorted one-indexed 4-tuples of basis labels.
+    - `basis_len (int|None)`: Length of the basis of ambient divisors. Defaults to `None`, in which case the largest label in `IN` is used.
+    **Returns:**
+    - `tuple[dict[tuple[int,int,int],int|float],dict[int,tuple[int,int]]]`: A tuple containing:
+        - new_IN: Dictionary of intersection numbers `{(surface index, i, j): value}` with zero-based basis indices i <= j.
+        - surface_dict: Dictionary mapping surface indices to the one-indexed pairs (a, b) of basis divisors.
     """
+    n=max(map(max,IN),default=0) if basis_len is None else int(basis_len)
+    surface_dict=dict(enumerate(combinations_with_replacement(range(1,n+1),2)))
+    # zero-based surface index of (a,b), a<=b, in combinations_with_replacement order is offset[a]+b
+    offset=[a*n-a*(a+1)//2 for a in range(n)]
     new_IN={}
-    in_basis_tuple=tuple(range(1,basis_len+1))
-    ct=-1
-    surface_dict={}
-    for c in combinations_with_replacement(in_basis_tuple,2):
-        ct+=1
-        surface_dict[ct]=tuple(np.array(c))
-        for prod in product(in_basis_tuple,in_basis_tuple):
-            tu=tuple(sorted(c+prod))
-            if tu in IN.keys():
-                tt=tuple((ct,)+tuple(np.array(sorted(prod))-1))
-                new_IN[tt]=IN.get(tu)
-    return new_IN,surface_dict
+    for key,val in IN.items():
+        if len(key)!=4:
+            continue
+        i,j,k,l=(int(x)-1 for x in key)
+        if not 0<=i<=j<=k<=l<n:
+            continue
+        new_IN[(offset[i]+j,k,l)]=val
+        new_IN[(offset[i]+k,j,l)]=val
+        new_IN[(offset[i]+l,j,k)]=val
+        new_IN[(offset[j]+k,i,l)]=val
+        new_IN[(offset[j]+l,i,k)]=val
+        new_IN[(offset[k]+l,i,j)]=val
+    # sort to reproduce the key order of the former O(n^4) loop over (surface, i, j)
+    return dict(sorted(new_IN.items())),surface_dict
 
 def tensor_symm_in_basis(tensor,basis,Q=None,tol=1e-12):
     """
