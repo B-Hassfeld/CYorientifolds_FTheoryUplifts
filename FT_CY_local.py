@@ -1518,11 +1518,11 @@ class F_Theory_Uplift():
             raise ValueError("Uplift is not a nef-partition")
         if self.__M_conv_toric_fan is None:
             nf=UF.face_fan(self.pol_M_conv(),simplicial=True)
-            nint=UF.row_difference(nf.vectors(),self.intersecting_divisors_M())
+            nint=UF.row_difference(nf.vectors(),self.intersecting_divisors_M(toric_fan_adapted=True))
             if len(nint)>0:
                 nf=UF.contract_rays(nf,nf.vc.vectors_to_labels(nint))
-            newf=UF.refine_fan(nf,self.intersecting_divisors_M())
-            self.__M_conv_toric_fan=UF.reorder_fan(newf,self.intersecting_divisors_M())            
+            newf=UF.refine_fan(nf,self.intersecting_divisors_M(toric_fan_adapted=True))
+            self.__M_conv_toric_fan=UF.reorder_fan(newf,self.intersecting_divisors_M(toric_fan_adapted=True))            
             # self.__M_conv_toric_fan = VectorConfiguration(np.vstack([self.intersecting_divisors_B_M(),self.intersecting_divisors_W_M()])).triangulate()
         return self.__M_conv_toric_fan
 
@@ -2044,9 +2044,7 @@ class F_Theory_Uplift():
         if not self.is_nef_partition():
             raise ValueError("Intersection numbers on the M side can only be computed for nef partitions")
         if self.__intersection_numbers_M is None:
-            LB1=np.zeros(len(self.intersecting_divisors_M(as_labels=True)),dtype=int)
-            LB1[:len(self.intersecting_divisors_B_M(as_labels=True))]=1
-            LB2=np.ones(len(LB1),dtype=int)-LB1
+            LB1,LB2=self.nef_partition_M(as_divisors=True,toric_fan_adapted=True)
             self.__intersection_numbers_M=UF.cy_intersection_numbers(self.M_conv_toric_fan(),[LB1,LB2],self.basis_homology_M(),tol=tol,decimals=decimals)
         return self.__intersection_numbers_M
 
