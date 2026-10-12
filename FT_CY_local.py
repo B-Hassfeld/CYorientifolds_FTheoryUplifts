@@ -615,6 +615,7 @@ class F_Theory_Uplift():
         self.__LBB_N = None
         self.__LBW_M = None
         self.__LBB_M = None
+        self.__vectors_M_conv_toric_fan = None
         self.__basis_homology_M = None
         self.__basis_homology_N = None
         self.__normal_fan = None
@@ -622,6 +623,8 @@ class F_Theory_Uplift():
         self.__pts_singular_uplift=None
         self.__pts_smooth_uplift=None
         self.__smooth_uplift_toric_fan = None
+        self.__vertices_W_not_intersecting=None
+        self.__vertices_B_not_intersecting=None
         self.x = None
         self.y = None
         self.z = None
@@ -1104,7 +1107,7 @@ class F_Theory_Uplift():
             return np.arange(len(self.vectors_singular_uplift_ambient())+1,len(self.vectors_smooth_uplift_ambient())+1)
         return self.__blowups
 
-    def intersecting_divisors_B_N(self, as_labels: bool = False) -> np.ndarray:
+    def intersecting_divisors_B_N(self, as_labels: bool = False, toric_fan_adapted=False) -> np.ndarray:
         """
         **Description:**
     
@@ -1271,7 +1274,34 @@ class F_Theory_Uplift():
             return self.__intersecting_labels_N
         else:
             return self.vectors_smooth_uplift_ambient()[self.__intersecting_labels_N-1]
-        
+    
+    def vectors_M_conv_toric_fan(self):
+        if self.__vectors_M_conv_toric_fan is None:
+            vertsB=UF.get_same_rows(self.pol_M_conv().vertices(),self.pol_B_M().vertices())
+            vertsW=UF.get_same_rows(self.pol_M_conv().vertices(),self.pol_W_M().vertices())
+            self.__vertices_B_not_intersecting=UF.row_difference(vertsB,self.intersecting_divisors_B_M())
+            self.__vertices_W_not_intersecting=UF.row_difference(vertsW,self.intersecting_divisors_W_M())
+            if len(self.__vertices_B_not_intersecting)>0:
+                ptsB=np.vstack([self.__vertices_B_not_intersecting,self.intersecting_divisors_B_M()])
+            else:
+                ptsB=self.intersecting_divisors_B_M()
+            if len(self.__vertices_W_not_intersecting)>0:
+                ptsW=np.vstack([self.intersecting_divisors_W_M(),self.__vertices_W_not_intersecting])
+            else:
+                ptsW=self.intersecting_divisors_W_M()
+            self.__vectors_M_conv_toric_fan = np.vstack([ptsB,ptsW])
+        return self.__vectors_M_conv_toric_fan
+
+    def vertices_B_not_intersecting(self):
+        if self.__vertices_B_not_intersecting is None:
+            self.vectors_M_conv_toric_fan()
+        return self.__vertices_B_not_intersecting
+    
+    def vertices_W_not_intersecting(self):
+        if self.__vertices_W_not_intersecting is None:
+            self.vectors_M_conv_toric_fan()
+        return self.__vertices_W_not_intersecting
+
     def polytope(self) -> Polytope:
         """
         **Description:**
@@ -1518,11 +1548,11 @@ class F_Theory_Uplift():
             raise ValueError("Uplift is not a nef-partition")
         if self.__M_conv_toric_fan is None:
             nf=UF.face_fan(self.pol_M_conv(),simplicial=True)
-            nint=UF.row_difference(nf.vectors(),self.intersecting_divisors_M(toric_fan_adapted=True))
-            if len(nint)>0:
-                nf=UF.contract_rays(nf,nf.vc.vectors_to_labels(nint))
-            newf=UF.refine_fan(nf,self.intersecting_divisors_M(toric_fan_adapted=True))
-            self.__M_conv_toric_fan=UF.reorder_fan(newf,self.intersecting_divisors_M(toric_fan_adapted=True))            
+            # nint=UF.row_difference(nf.vectors(),self.intersecting_divisors_M(toric_fan_adapted=True))
+            # if len(nint)>0:
+            #     nf=UF.contract_rays(nf,nf.vc.vectors_to_labels(nint))
+            newf=UF.refine_fan(nf,self.vectors_M_conv_toric_fan())
+            self.__M_conv_toric_fan=UF.reorder_fan(newf,self.vectors_M_conv_toric_fan())
             # self.__M_conv_toric_fan = VectorConfiguration(np.vstack([self.intersecting_divisors_B_M(),self.intersecting_divisors_W_M()])).triangulate()
         return self.__M_conv_toric_fan
 
@@ -1798,7 +1828,7 @@ class F_Theory_Uplift():
             raise ValueError("Euler number can only be computed for a nef-decomposition")
         if self.__chi is None:
             if self.__hodge_numbers is None:
-                chi_loc = UF.cicy4_toric_chern_class(self.smooth_uplift_ambient_toric_fan(), [self.line_bundle_base_N(),self.line_bundle_weierstrass_N()], 4)
+                chi_loc = UF.toric_chern_class(self.smooth_uplift_ambient_toric_fan(), [self.line_bundle_base_N(),self.line_bundle_weierstrass_N()], 4)
                 nO3=UF.three_cone_intersections(self.polytope().dual(),self.CY_ambient_toric_fan(),UF.Z2_fixed_locus(self.CY_ambient_toric_fan(),self.xi(),3))
                 self.__chi = chi_loc+6*nO3
             else:
@@ -1810,7 +1840,7 @@ class F_Theory_Uplift():
         """
         **Description:**
     
-        Computes and caches the second Chern class of the Calabi-Yau fourfold, the complete intersection of the base and Weierstrass divisors in the resolved uplift ambient toric fan, by toric localization (`UF.cicy4_toric_chern_class` with `n=2`).
+        Computes and caches the second Chern class of the Calabi-Yau fourfold, the complete intersection of the base and Weierstrass divisors in the resolved uplift ambient toric fan, by toric localization (`UF.toric_chern_class` with `n=2`).
     
         **Raises:**
     
@@ -1824,14 +1854,14 @@ class F_Theory_Uplift():
         if not self.is_nef_decomposition():
             raise ValueError("Second Chern class can only be computed for a nef-decomposition")
         if self.__c2 is None:
-            self.__c2 = UF.cicy4_toric_chern_class(self.smooth_uplift_ambient_toric_fan(), [self.line_bundle_base_N(),self.line_bundle_weierstrass_N()], 2)
+            self.__c2 = UF.toric_chern_class(self.smooth_uplift_ambient_toric_fan(), [self.line_bundle_base_N(),self.line_bundle_weierstrass_N()], 2)
         return self.__c2
 
     def c3(self) -> dict[np.integer, int]:
         """
         **Description:**
     
-        Computes and caches the third Chern class of the Calabi-Yau fourfold, the complete intersection of the base and Weierstrass divisors in the resolved uplift ambient toric fan, by toric localization (`UF.cicy4_toric_chern_class` with `n=3`).
+        Computes and caches the third Chern class of the Calabi-Yau fourfold, the complete intersection of the base and Weierstrass divisors in the resolved uplift ambient toric fan, by toric localization (`UF.toric_chern_class` with `n=3`).
     
         **Raises:**
     
@@ -1845,7 +1875,7 @@ class F_Theory_Uplift():
         if not self.is_nef_decomposition():
             raise ValueError("Third Chern class can only be computed for a nef-decomposition")
         if self.__c3 is None:
-            self.__c3 = UF.cicy4_toric_chern_class(self.smooth_uplift_ambient_toric_fan(), [self.line_bundle_base_N(),self.line_bundle_weierstrass_N()], 3)
+            self.__c3 = UF.toric_chern_class(self.smooth_uplift_ambient_toric_fan(), [self.line_bundle_base_N(),self.line_bundle_weierstrass_N()], 3)
         return self.__c3
 
     def is_regular(self) -> bool:
@@ -1954,9 +1984,10 @@ class F_Theory_Uplift():
         """
         if self.is_nef_partition():
             if toric_fan_adapted:
-                inds=[np.arange(1,len(self.intersecting_divisors_B_M(as_labels=True))+1),np.arange(len(self.intersecting_divisors_B_M(as_labels=True))+1,len(self.intersecting_divisors_M(as_labels=True))+1)]
+                n_bulk=len(self.intersecting_divisors_B_M(as_labels=True))+len(self.vertices_B_not_intersecting())
+                inds=[np.arange(1,n_bulk+1),np.arange(n_bulk+1,len(self.vectors_M_conv_toric_fan())+1)]
                 if as_divisors:
-                    LB1=np.zeros(len(self.intersecting_divisors_M(as_labels=True)),dtype=int)
+                    LB1=np.zeros(len(self.vectors_M_conv_toric_fan()),dtype=int)
                     LB2=LB1.copy()
                     LB1[inds[0]-1]=1
                     LB2[inds[1]-1]=1

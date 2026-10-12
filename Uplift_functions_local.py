@@ -40,13 +40,13 @@ import tempfile
 import subprocess
 import re
 from pathlib import Path
-from flint import fmpz_mat
+from flint import fmpz_mat, fmpq_mat, fmpq
 from sympy import Matrix, ZZ
 from sympy.matrices.normalforms import smith_normal_decomp, smith_normal_form
 from scipy.optimize import nnls
 from scipy.linalg import schur
 import scipy.sparse as sps
-from scipy.optimize import milp, LinearConstraint
+from scipy.optimize import milp, LinearConstraint, linprog
 # CYTools imports
 from cytools import Polytope, h_polytope, Cone
 from cytools.polytope import poly_v_to_h
@@ -549,13 +549,18 @@ def Z2_fixed_locus(vc_triangulation: Fan,q: ArrayLike,cone_dimension: int|None=N
     **Returns:**
     - `list[tuple[int, ...]]`: Fixed-locus cones, represented as tuples of one-indexed ray labels.
     """
-    if type(cone_dimension)==type(None):
-        all_cones={j for c in vc_triangulation.cones() for i in range(1,len(c))  for j in combinations(c,i)}
-        all_cones=[c for c in all_cones]
+    cones=vc_triangulation.cones()
+    if cone_dimension is None:
+        dims=range(1,max(len(c) for c in cones))
     else:
-        all_cones=list(get_lower_dimensional_cones(vc_triangulation.cones(),cone_dimension))
-    fixed_locus_cones=[all_cones[i] for i in np.where([np.all(np.mod(sum(vc_triangulation.vectors()[np.array(c)-1])+q,denominator)==0) for c in all_cones])[0]]
-    return fixed_locus_cones
+        dims=[cone_dimension]
+    V=np.asarray(vc_triangulation.vectors())
+    out=[]
+    for k in dims:
+        cs=np.array(get_lower_dimensional_cones(cones,k),dtype=int).reshape(-1,k)
+        fixed=np.all(np.mod(V[cs-1].sum(axis=1)+q,denominator)==0,axis=1)
+        out.extend(tuple(int(l) for l in c) for c in cs[fixed])
+    return out
 
 def inequivalent_Z2_actions(lattice_symmetries: Sequence[np.ndarray]|np.ndarray)->np.ndarray:
     """
@@ -1346,12 +1351,14 @@ def find_cone_general(new_ray: ArrayLike,current_cones: Iterable[tuple[int,...]]
             return face
     return None
 
-def array_to_latex(arr: np.ndarray)->str:
+def array_to_latex(arr: np.ndarray,as_fractions: bool=False,max_denominator: int=10**6)->str:
     """
     **Description:**
     Converts a two-dimensional NumPy array into a LaTeX `pmatrix` string.
     **Arguments:**
     - `arr (np.ndarray)`: The two-dimensional array to convert.
+    - `as_fractions (bool)`: Whether to write the entries as fractions `\\frac{p}{q}` instead of decimals. Defaults to `False`.
+    - `max_denominator (int)`: Largest denominator used when approximating floating point entries by fractions. Defaults to `10**6`.
     **Raises:**
     - `ValueError`: Raised if `arr` has more than two dimensions.
     **Returns:**
@@ -1359,7 +1366,13 @@ def array_to_latex(arr: np.ndarray)->str:
     """
     if len(arr.shape)>2:
         raise ValueError("Only 2D matrices are supported.")
-    lines=["            "+" & ".join(map(str,row))+r" \\" for row in arr]
+    def to_frac(x):
+        f=Fraction(x) if isinstance(x,(int,np.integer,Fraction)) else Fraction(float(x)).limit_denominator(max_denominator)
+        if f.denominator==1:
+            return str(f.numerator)
+        return ("-" if f<0 else "")+rf"\frac{{{abs(f.numerator)}}}{{{f.denominator}}}"
+    fmt=to_frac if as_fractions else str
+    lines=["            "+" & ".join(map(fmt,row))+r" \\" for row in arr]
     return "\\begin{pmatrix}\n"+"\n".join(lines)+"\n        \\end{pmatrix}"
 
 def integral_gale_transform(points: ArrayLike)->np.ndarray:
@@ -1483,8 +1496,6 @@ def hodge_numbers_weighted(O: CY_orientifold)->dict[str,int|np.integer]:
     **Returns:**
     - `dict[str,int|np.integer]`: Dictionary with keys `"h11+"`, `"h11-"`, `"h21+"` and `"h21-"`.
     """
-    chiO3=chi_O3_uplift(O)
-    chiO7=chi_O7(O)
     pol=O.polytope()
     if not pol.is_reflexive():
         raise ValueError("Weighted Hodge Numbers can only be computed if the original CY is defined by a reflexive polytope")
@@ -1511,34 +1522,38 @@ def hodge_numbers_weighted(O: CY_orientifold)->dict[str,int|np.integer]:
     hodge_numbers["h21+"]=pol.h21()-hodge_numbers.get("h21-")
     return hodge_numbers
 
-def chi_I(O: CY_orientifold)->float:
+def chi_I(O: CY_orientifold)->int:
     """
     **Description:**
     Computes the Euler characteristic of the fixed locus of the orientifold involution as the sum of the O7-plane contribution `chi_O7` and the O3-plane contribution `chi_O3_uplift`.
     **Arguments:**
     - `O (CY_orientifold)`: The Calabi-Yau orientifold.
     **Returns:**
-    - `float`: The Euler characteristic of the fixed locus.
+    - `int`: The Euler characteristic of the fixed locus.
     """
     return chi_O7(O)+chi_O3_uplift(O)
 
-def chi_O7(O: CY_orientifold|F_Theory_Uplift)->float:
+def chi_O7(O: CY_orientifold|F_Theory_Uplift)->int:
     """
     **Description:**
-    Computes the total Euler characteristic of the O7-planes, summing `D^3 + c_2(D)` over the O7-plane divisors `D` found by `find_O7_planes`, with the pushed-down intersection numbers and second Chern class of the Calabi-Yau ambient toric fan.
+    Computes the total Euler characteristic of the O7-planes, summing chi(D∩X)=D^3+c_2(X)D over the O7-plane divisors
+    `D` found by `find_O7_planes`. With X the anticanonical hypersurface, c(D∩X)=prod(1+D_i)/((1+X)(1+D)), so
+    chi(D∩X)=int_V X D (e_2(D_1,...,D_N)+D^2), which is evaluated for all O7-planes in one torus localization.
     **Arguments:**
     - `O (CY_orientifold|F_Theory_Uplift)`: The Calabi-Yau orientifold or F-theory uplift (any object providing `CY_ambient_toric_fan()` and `xi()`).
     **Returns:**
-    - `float`: The Euler characteristic of the O7-planes.
+    - `int`: The Euler characteristic of the O7-planes.
     """
-    O7s_CY_ambient=np.array(find_O7_planes(O))
-    IN_CY=O.CY_ambient_toric_fan().intersection_numbers(pushed_down=True)
-    c2=O.CY_ambient_toric_fan().c2()
-    chi=0
-    for o7 in O7s_CY_ambient:
-        t=(o7,o7,o7)
-        chi+=IN_CY.get(t,0)+c2[o7-1]
-    return chi
+    fan=O.CY_ambient_toric_fan()
+    o7=np.zeros(len(fan.vectors()),dtype=bool)
+    o7[find_O7_planes(O)-1]=True
+    if not o7.any():
+        return 0
+    cones,w,den=localization_weights(fan)
+    lX=w.sum(axis=1)
+    e2=(lX**2-(w**2).sum(axis=1))/2
+    wD=np.where(o7[cones],w,0.0)
+    return round(np.sum((e2[:,None]+wD**2)*wD*(lX/den)[:,None]))
 
 def chi_O3(fan: Fan,fixed_cones: Iterable[tuple[int,...]])->float:
     """
@@ -1558,17 +1573,21 @@ def chi_O3(fan: Fan,fixed_cones: Iterable[tuple[int,...]])->float:
             chi+=IN.get(t,0)
     return chi
 
-def chi_O3_uplift(O: CY_orientifold)->float:
+def chi_O3_uplift(O: CY_orientifold)->int:
     """
     **Description:**
-    Computes the O3-plane contribution `chi_O3` of the orientifold, using the fixed cones of codimension one less than the dimension of `O` (`Z2_fixed_locus` with `cone_dimension=O.dim()-1`) on the Calabi-Yau ambient toric fan.
+    Computes the O3-plane contribution to the Euler characteristic of the fixed locus, i.e. the number of O3-planes,
+    by `three_cone_intersections` on the fixed cones of codimension one less than the dimension of `O`
+    (`Z2_fixed_locus` with `cone_dimension=O.dim()-1`) of the Calabi-Yau ambient toric fan.
     **Arguments:**
     - `O (CY_orientifold)`: The Calabi-Yau orientifold.
+    **Raises:**
+    - `ValueError`: Raised by `three_cone_intersections` if a fixed 3-cone is contained in the Calabi-Yau.
     **Returns:**
-    - `float`: The O3-plane contribution to the Euler characteristic of the fixed locus.
+    - `int`: The number of O3-planes.
     """
-    fixed_cones=Z2_fixed_locus(O.CY_ambient_toric_fan(),O.xi(),O.dim()-1)
-    return chi_O3(O.CY_ambient_toric_fan(),fixed_cones)
+    fan=O.CY_ambient_toric_fan()
+    return three_cone_intersections(O.polytope().dual(),fan,Z2_fixed_locus(fan,O.xi(),O.dim()-1))
 
 def intersection_test(fan: Fan,intersection_dict: Mapping[tuple[int,...],float],divisors: Sequence[np.ndarray],target_divisors: Sequence[int]|np.ndarray)->np.ndarray:
     """
@@ -1629,9 +1648,8 @@ def find_O7_planes(O: CY_orientifold|F_Theory_Uplift)->np.ndarray:
     **Returns:**
     - `np.ndarray`: Sorted array of the unique one-indexed ray labels of the O7-plane divisors.
     """
-    O7_tup=Z2_fixed_locus(O.CY_ambient_toric_fan(),O.xi(),1)
-    O7tot=np.unique([t[0] for t in O7_tup])
-    return O7tot
+    return np.unique([t[0] for t in Z2_fixed_locus(O.CY_ambient_toric_fan(),O.xi(),1)]).astype(int)
+
 # ---- Obsolete: superseded by hodge_diamond_stringy / hodge_diamond_cy4 / F_Theory_Uplift.hodge_numbers_CY (kept as comments for reference) ----
 # def _vertex_key(vertices: ArrayLike)->tuple[tuple[int,...],...]:
 #     """
@@ -4341,19 +4359,19 @@ def chi_fourfold_uplift(F: F_Theory_Uplift)->int:
     n_O3=three_cone_intersections(F.polytope().dual(),F.CY_ambient_toric_fan(),Z2_fixed_locus(F.CY_ambient_toric_fan(),F.xi(),3))
     return chi_loc+n_O3*6
 
-def cicy4_chern_toric_uplift(F: F_Theory_Uplift,n: int)->int|dict[tuple[int,...],int]|dict[int,int]:
+def toric_chern_class_uplift(F: F_Theory_Uplift,n: int)->int|dict[tuple[int,...],int]|dict[int,int]:
     """
     **Description:**
-    Apply cicy4_toric_chern_class directly to an F-theory uplift.
+    Apply toric_chern_class directly to an F-theory uplift.
     **Arguments:**
     - `F (F_Theory_Uplift)`: The F-theory uplift; its smooth uplift ambient fan and the line bundles `line_bundle_base_N()`, `line_bundle_weierstrass_N()` are used.
     - `n (int)`: Degree of the Chern class (1 to 4).
     **Returns:**
-    - `int|dict[tuple[int,...],int]|dict[int,int]`: The Chern tensor c_n, see `cicy4_toric_chern_class`.
+    - `int|dict[tuple[int,...],int]|dict[int,int]`: The Chern tensor c_n, see `toric_chern_class`.
     """
     fan=F.smooth_uplift_ambient_toric_fan()
     divisors=[F.line_bundle_base_N(),F.line_bundle_weierstrass_N()]
-    return cicy4_toric_chern_class(fan,divisors,n)
+    return toric_chern_class(fan,divisors,n)
 
 def intersecting_points(points: np.ndarray,divisors: Sequence[np.ndarray]|None=None,polytopes: Sequence[Polytope|h_polytope.HPolytope]|None=None,as_indices: bool=False,return_not_intersecting: bool=False)->np.ndarray:
     """
@@ -4664,62 +4682,95 @@ def cygv_intnums_prime_surfaces(IN4: Mapping[tuple[int,...],int|float],Q: ArrayL
                     intnums[(s,i,j)]=int(val)
     return intnums, surface_map
 
-def cicy4_toric_chern_class(fan: Fan,divisors: ArrayLike,n: int)->int|dict[tuple[int,...],int]|dict[int,int]:
+def localization_weights(fan: Fan)->tuple[np.ndarray,np.ndarray,np.ndarray]:
     """
     **Description:**
-    Chern tensor c_n(X) for a codimension-2 CY fourfold X=L1∩L2
-    in a 6-dimensional simplicial toric variety.
-    Computed by torus localization on the maximal cones of the fan.
-    Prime-toric divisor indices are 1-based.
+    Torus-fixed point data of the simplicial toric variety of `fan` for a generic one-parameter subgroup xi=(1,k,k^2,...).
+    At the fixed point of a maximal cone sigma the weights of the prime toric divisors D_i (i in sigma) are the
+    coordinates of xi in the ray basis of sigma; for every polynomial P in the D_i,
+    int P = sum_sigma P(weights)/(|det sigma| prod weights).
     **Arguments:**
-    - `fan (Fan)`: The simplicial toric fan of the 6-dimensional ambient variety.
-    - `divisors (ArrayLike)`: The coefficient vectors of L1 and L2 in the prime toric divisor basis, one per row.
-    - `n (int)`: Degree of the Chern class (1 to 4).
+    - `fan (Fan)`: A complete simplicial fan.
     **Raises:**
-    - `ValueError`: Raised if the ambient toric variety is not 6-dimensional.
+    - `ValueError`: Raised if no generic xi is found.
     **Returns:**
-    - `int|dict[tuple[int,...],int]|dict[int,int]`: The Chern tensor:
-        n=1 : 0
-        n=2 : {(i,j): value}
-        n=3 : {i: value}
-        n=4 : number
+    - `tuple[np.ndarray,np.ndarray,np.ndarray]`: (cones, weights, denominators): the maximal cones as zero-based ray indices (C,d), the weights (C,d) and |det sigma| prod weights (C,).
     """
-    if n==1:
-        return 0
     vecs=np.asarray(fan.vectors(),float)
-    divs=np.asarray(divisors,float)
     cones=np.asarray(fan.cones(as_inds=True))
-    if vecs.shape[1]!=6:
-        raise ValueError("Ambient toric variety must be 6-dimensional.")
+    d=vecs.shape[1]
     M=vecs[cones].transpose(0,2,1)
+    Minv=np.linalg.inv(M)
     for k in range(2,50):
-        xi=np.array([1,k,k**2,k**3,k**4,k**5],float)
-        weights=np.linalg.inv(M)@xi
+        weights=Minv@(float(k)**np.arange(d))
         if np.all(np.abs(weights)>1e-10):
-            break
-    ell=np.sum(divs[:,cones]*weights[None,:,:],axis=2).T
-    l1, l2=ell.T
-    if n==2:
-        chern=-(np.sum(weights**2,axis=1)-l1**2-l2**2)/2
-    elif n==3:
-        chern=(np.sum(weights**3,axis=1)-l1**3-l2**3)/3
-    else:
-        p2=np.sum(weights**2,axis=1)-l1**2-l2**2
-        p4=np.sum(weights**4,axis=1)-l1**4-l2**4
-        chern=p2**2/8-p4/4
-    base=chern*l1*l2/(np.abs(np.linalg.det(M))*np.prod(weights,axis=1))
-    rank=4-n
+            return cones,weights,np.abs(np.linalg.det(M))*np.prod(weights,axis=1)
+    raise ValueError("No generic one-parameter subgroup found.")
+
+def toric_chern_class(fan: Fan,divisors: ArrayLike,n: int)->int|dict[tuple[int,...],int]|dict[int,int]:
+    """
+    **Description:**
+    Chern tensor c_n(X) of the complete intersection X=L_1∩...∩L_r in the simplicial toric variety of `fan`, of any
+    dimension, computed by torus localization on the maximal cones of the fan. With the weights w of the prime toric
+    divisors and l_k of the L_k at a fixed point, c(X)=prod(1+w)/prod(1+l_k), so c_n follows from the power sums
+    p_j=sum w^j-sum l_k^j by Newton's identities. The tensor of rank dim X-n is
+    T_{a_1..a_m}=int_X c_n(X) D_{a_1}...D_{a_m}. Prime-toric divisor indices are 1-based.
+    **Arguments:**
+    - `fan (Fan)`: The complete simplicial toric fan of the ambient variety.
+    - `divisors (ArrayLike)`: The coefficient vectors of L_1,...,L_r in the prime toric divisor basis, one per row.
+    - `n (int)`: Degree of the Chern class (0 to dim X).
+    **Raises:**
+    - `ValueError`: Raised if `n` is not between 0 and dim X.
+    **Returns:**
+    - `int|dict[tuple[int,...],int]|dict[int,int]`: The rounded Chern tensor: a number if n=dim X, {i: value} if n=dim X-1, and {sorted label tuple: value} otherwise.
+    """
+    divs=np.atleast_2d(np.asarray(divisors,float))
+    cones,weights,den=localization_weights(fan)
+    d=weights.shape[1]
+    rank=d-len(divs)-n
+    if n<0 or rank<0:
+        raise ValueError(f"The degree must be between 0 and {d-len(divs)}.")
+    ell=np.einsum("kci,ci->ck",divs[:,cones],weights)
+    p=[None]+[np.sum(weights**j,axis=1)-np.sum(ell**j,axis=1) for j in range(1,n+1)]
+    e=[np.ones(len(cones))]
+    for m in range(1,n+1):
+        e.append(sum((-1)**(i-1)*e[m-i]*p[i] for i in range(1,m+1))/m)
+    base=e[n]*np.prod(ell,axis=1)/den
     if rank==0:
         return round(np.sum(base))
-    result=defaultdict(float)
-    for cone, w, coeff in zip(cones,weights,base):
-        for inds in combinations_with_replacement(range(6),rank):
+    result={}
+    for cone,w,coeff in zip(cones,weights,base):
+        for inds in combinations_with_replacement(range(d),rank):
             key=tuple(sorted(cone[list(inds)]+1))
-            result[key]+=coeff*np.prod(w[list(inds)])
+            result[key]=result.get(key,0)+coeff*np.prod(w[list(inds)])
     result={key: round(value) for key,value in result.items() if abs(value)>1e-8}
     if rank==1:
         result={key[0]: value for key,value in result.items()}
     return result
+
+# def cicy4_toric_chern_class(fan: Fan,divisors: ArrayLike,n: int)->int|dict[tuple[int,...],int]|dict[int,int]:
+#     """
+#     **Description:**
+#     Chern tensor c_n(X) for a codimension-2 CY fourfold X=L1∩L2 in a 6-dimensional simplicial toric variety, via
+#     `toric_chern_class`. Prime-toric divisor indices are 1-based.
+#     **Arguments:**
+#     - `fan (Fan)`: The simplicial toric fan of the 6-dimensional ambient variety.
+#     - `divisors (ArrayLike)`: The coefficient vectors of L1 and L2 in the prime toric divisor basis, one per row.
+#     - `n (int)`: Degree of the Chern class (1 to 4).
+#     **Raises:**
+#     - `ValueError`: Raised if the ambient toric variety is not 6-dimensional.
+#     **Returns:**
+#     - `int|dict[tuple[int,...],int]|dict[int,int]`: The Chern tensor:
+#         n=1 : 0
+#         n=2 : {(i,j): value}
+#         n=3 : {i: value}
+#         n=4 : number
+#     """
+#     if n==1:
+#         return 0
+#     if np.asarray(fan.vectors()).shape[1]!=6:
+#         raise ValueError("Ambient toric variety must be 6-dimensional.")
+#     return toric_chern_class(fan,divisors,n)
 
 def cy_intersection_numbers(fan: Fan,divisors: Sequence[ArrayLike],basis: ArrayLike|None=None,Q: ArrayLike|None=None,in_basis: bool=False,tol: float|None=1e-5,decimals: int=10)->dict[tuple[int,...],int|float]:
     """
@@ -4946,8 +4997,8 @@ def adapted_glsm_uplift(F: F_Theory_Uplift)->np.ndarray:
     **Returns:**
     - `np.ndarray`: The adapted GLSM charge matrix.
     """
-    V=F.intersecting_divisors_M(toric_fan_adapted=True)
-    n_bulk=len(F.intersecting_divisors_B_M(as_labels=True))
+    V=F.vectors_M_conv_toric_fan()
+    n_bulk=len(F.intersecting_divisors_B_M(as_labels=True))+len(F.vertices_B_not_intersecting())
     return adapted_glsm(V,n_bulk)
 _PERMS4=np.array(list(permutations(range(4))))
 
@@ -5325,68 +5376,252 @@ def intersection_form_H22_vertical(IN_in_basis: Mapping[tuple[int,...],int|float
     C,G=intersection_form_H22_vertical_from_gram_matrix(mat)
     return C, G, inv_dict,mat
 
-def contract_rays(fan: Fan,rays: Iterable[int],tol: float=1e-9)->Fan:
-    """
-    **Description:**
-    Contracts (blows down) rays of a simplicial fan, one ray r at a time.
-    If r lies inside a simplicial cone sigma such that every cone containing r misses exactly one ray of sigma, each
-    such cone c is replaced by (c without r) together with sigma; this inverts `refine_fan`. Otherwise the cones
-    containing r are retriangulated without r, as in `make_simplicial`. Neighbouring cones are added to the
-    retriangulated region until it is convex and its triangulation matches the cones around it.
-    **Arguments:**
-    - `fan (Fan)`: The simplicial toric fan.
-    - `rays (Iterable[int])`: One-indexed labels of the rays to contract.
-    - `tol (float)`: Numerical tolerance. Defaults to `1e-9`.
-    **Raises:**
-    - `ValueError`: Raised if a ray cannot be removed without shrinking the support of the fan.
-    **Returns:**
-    - `Fan`: The contracted fan over the vector configuration of its rays, labelled 1,...,#rays in their original order.
-    """
-    V=fan.vc.vectors()
-    dim=fan.dim
-    cones=set(fan.cones())
-    normal=lambda F: np.linalg.svd(V[np.array(F)-1])[2][-1]
-    outer=lambda region: {F for F,k in Counter(F for c in region for F in combinations(c,dim-1)).items() if k==1}
-    for r in rays:
-        star={c for c in cones if r in c}
-        c0=next(iter(star))
-        F=[l for l in c0 if l!=r]
-        for t in set().union(*star)-set(c0):
-            M=V[np.array(F+[t])-1].T
-            if abs(np.linalg.det(M))<tol:
-                continue
-            x=np.linalg.solve(M,V[r-1])
-            sigma={l for l,xi in zip(F+[t],x) if xi>tol}
-            new=Counter(tuple(sorted(set(c)-{r}|sigma)) for c in star)
-            if (x>-tol).all() and all(k==len(sigma) for k in new.values()):
-                cones=(cones-star)|set(new)
-                break
-        else:
-            region=star
-            while True:
-                S=np.array(sorted(set().union(*region)-{r}))
-                bound=outer(region)
-                bad=set()
-                for F in bound:
-                    s=V[np.append(S,r)-1]@normal(F)
-                    if (s<-tol).any() and (s>tol).any():
-                        bad.add(F)
-                if not bad and nnls(V[S-1].T,V[r-1])[1]>tol:
-                    bad=bound
-                if not bad:
-                    tri=VectorConfiguration(V[S-1]).triangulate(make_fine=True)
-                    new={tuple(sorted(S[np.array(co)-1].tolist())) for co in tri.cones()}
-                    if outer(new)==bound:
-                        break
-                    bad=bound-outer(new)
-                nbrs={c for c in cones-region if any(set(F)<=set(c) for F in bad)}
-                if not nbrs:
-                    raise ValueError(f"Ray {r} cannot be contracted: the cones around it cannot be retriangulated without it.")
-                region=region|nbrs
-            cones=(cones-region)|new
-    used=sorted(set().union(*cones))
-    relabel={l:i+1 for i,l in enumerate(used)}
-    return Fan(vc=VectorConfiguration(V[np.array(used)-1]),cones=[tuple(relabel[l] for l in c) for c in cones])
+# def contract_rays(fan: Fan,rays: Iterable[int],tol: float=1e-9)->Fan:
+#     """
+#     **Description:**
+#     Contracts (blows down) rays of a simplicial fan, one ray r at a time.
+#     If r lies inside a simplicial cone sigma such that every cone containing r misses exactly one ray of sigma, each
+#     such cone c is replaced by (c without r) together with sigma; this inverts `refine_fan`. Otherwise the cones
+#     containing r are retriangulated without r, as in `make_simplicial`. Neighbouring cones are added to the
+#     retriangulated region until it is convex and its triangulation matches the cones around it.
+#     **Arguments:**
+#     - `fan (Fan)`: The simplicial toric fan.
+#     - `rays (Iterable[int])`: One-indexed labels of the rays to contract.
+#     - `tol (float)`: Numerical tolerance. Defaults to `1e-9`.
+#     **Raises:**
+#     - `ValueError`: Raised if a ray cannot be removed without shrinking the support of the fan.
+#     **Returns:**
+#     - `Fan`: The contracted fan over the vector configuration of its rays, labelled 1,...,#rays in their original order.
+#     """
+#     V=fan.vc.vectors()
+#     dim=fan.dim
+#     cones=set(fan.cones())
+#     normal=lambda F: np.linalg.svd(V[np.array(F)-1])[2][-1]
+#     outer=lambda region: {F for F,k in Counter(F for c in region for F in combinations(c,dim-1)).items() if k==1}
+#     for r in rays:
+#         star={c for c in cones if r in c}
+#         c0=next(iter(star))
+#         F=[l for l in c0 if l!=r]
+#         for t in set().union(*star)-set(c0):
+#             M=V[np.array(F+[t])-1].T
+#             if abs(np.linalg.det(M))<tol:
+#                 continue
+#             x=np.linalg.solve(M,V[r-1])
+#             sigma={l for l,xi in zip(F+[t],x) if xi>tol}
+#             new=Counter(tuple(sorted(set(c)-{r}|sigma)) for c in star)
+#             if (x>-tol).all() and all(k==len(sigma) for k in new.values()):
+#                 cones=(cones-star)|set(new)
+#                 break
+#         else:
+#             region=star
+#             while True:
+#                 S=np.array(sorted(set().union(*region)-{r}))
+#                 bound=outer(region)
+#                 bad=set()
+#                 for F in bound:
+#                     s=V[np.append(S,r)-1]@normal(F)
+#                     if (s<-tol).any() and (s>tol).any():
+#                         bad.add(F)
+#                 if not bad and nnls(V[S-1].T,V[r-1])[1]>tol:
+#                     bad=bound
+#                 if not bad:
+#                     tri=VectorConfiguration(V[S-1]).triangulate(make_fine=True)
+#                     new={tuple(sorted(S[np.array(co)-1].tolist())) for co in tri.cones()}
+#                     if outer(new)==bound:
+#                         break
+#                     bad=bound-outer(new)
+#                 nbrs={c for c in cones-region if any(set(F)<=set(c) for F in bad)}
+#                 if not nbrs:
+#                     raise ValueError(f"Ray {r} cannot be contracted: the cones around it cannot be retriangulated without it.")
+#                 region=region|nbrs
+#             cones=(cones-region)|new
+#     used=sorted(set().union(*cones))
+#     relabel={l:i+1 for i,l in enumerate(used)}
+#     return Fan(vc=VectorConfiguration(V[np.array(used)-1]),cones=[tuple(relabel[l] for l in c) for c in cones])
+
+# def fan_from_triangulation(T: Triangulation)->tuple[Fan,np.ndarray]:
+#     """
+#     **Description:**
+#     Returns the fan of a regular star triangulation of a polytope with the origin in its interior, together with heights
+#     generating it. The rays are the points of `T` other than the origin, labelled 1,...,n in the order of `T.labels`.
+#     If `T` is generated by the point heights h, then for every cone sigma the linear function l with l(v)=h(v)-h(0) on
+#     the rays of sigma satisfies l(w)<h(w)-h(0) for all other rays w, i.e. the fan is generated by the vector heights
+#     h-h(0). These are computed exactly, as floats are exact rationals.
+#     **Arguments:**
+#     - `T (Triangulation)`: A regular star triangulation containing the origin.
+#     **Raises:**
+#     - `ValueError`: Raised if `T` does not contain the origin or is not star.
+#     **Returns:**
+#     - `tuple[Fan,np.ndarray]`: The fan and the heights of its vectors in label order (object array of `Fraction`).
+#     """
+#     o=T.polytope().label_origin
+#     if o is None or o not in T.labels or not T.is_star():
+#         raise ValueError("The triangulation must be star with respect to the origin.")
+#     labels=[l for l in T.labels if l!=o]
+#     idx={l:i+1 for i,l in enumerate(labels)}
+#     h={l:Fraction(x.item() if hasattr(x,"item") else x) for l,x in zip(T.labels,T.heights())}
+#     cones=[tuple(sorted(idx[l] for l in s if l!=o)) for s in T.simplices()]
+#     fan=Fan(vc=VectorConfiguration(T.polytope().points(which=labels)),cones=cones)
+#     return fan,np.array([h[l]-h[o] for l in labels],dtype=object)
+
+# def contract_rays_regular(fan: Fan,rays: Iterable[int],heights: ArrayLike,tol: float=1e-8)->Fan:
+#     """
+#     **Description:**
+#     Contracts (deletes) rays R of a complete simplicial fan generated by `heights`, without computing circuits.
+#     Deleting vectors keeps every lower face of the lifted vectors that avoids them, so all cones avoiding R survive and
+#     only the region covered by the cones containing a ray of R is retriangulated. This is done by gift wrapping from the
+#     boundary facets of the region: the cone on the inner side of a facet f is spanned by f and the ray w minimizing
+#     t(w)=(g(w)-l(w))/gamma(w), where w=sum_x beta_x x+gamma(w) n for the inner integral normal n of f and
+#     l(w)=sum_x beta_x g(x). Only the rays of the cones containing a ray of R are candidates, as no other ray lies in
+#     the region. Ties are broken by the symbolic perturbation g+sum_k eps^k e_k (eps->0, k the label), so the result is
+#     the regular triangulation of the remaining vectors for the restricted (perturbed) heights. All decisions are exact:
+#     sides are decided with integral normals, and heights within `tol` of a tie are compared in exact rational
+#     arithmetic (floats are exact rationals). Each boundary facet must be a strict lower face, which holds if `heights`
+#     lie in the interior of the secondary cone of `fan`, and is checked.
+#     **Arguments:**
+#     - `fan (Fan)`: A complete simplicial fan.
+#     - `rays (Iterable[int])`: One-indexed labels of the rays to contract.
+#     - `heights (ArrayLike)`: Heights generating `fan`, one per vector of `fan.vc` in label order (int, float or `Fraction`), e.g. from `fan_from_triangulation`.
+#     - `tol (float)`: Relative margin below which float comparisons are redone exactly. Defaults to `1e-8`.
+#     **Raises:**
+#     - `ValueError`: Raised if the fan is not simplicial or not complete around the rays, if a boundary facet of the region is not a strict lower face for `heights`, or if the remaining rays do not span the region.
+#     **Returns:**
+#     - `Fan`: The contracted fan over the remaining vectors, labelled 1,...,#vectors-#R in their original order. It is generated by the remaining heights.
+#     """
+#     V=np.asarray(fan.vc.vectors(),dtype=np.int64)
+#     Vf=V.astype(float)
+#     gq=[Fraction(x.item() if hasattr(x,"item") else x) for x in heights]
+#     g=np.array([float(x) for x in gq])
+#     dim=V.shape[1]
+#     R={int(r) for r in rays}
+#     cones=[tuple(int(l) for l in c) for c in fan.cones()]
+#     if any(len(c)!=dim for c in cones):
+#         raise ValueError("The fan must be full-dimensional and simplicial.")
+#     inner=[c for c in cones if R.intersection(c)]
+#     outer=[c for c in cones if not R.intersection(c)]
+#     keep=[l for l in range(1,len(V)+1) if l not in R]
+#     relabel={l:i+1 for i,l in enumerate(keep)}
+#     if not inner:
+#         return Fan(vc=VectorConfiguration(V[np.array(keep)-1]),cones=[tuple(relabel[l] for l in c) for c in outer])
+#     W=np.array(sorted(set().union(*inner)-R))
+#     WV=V[W-1]
+#     WVf=Vf[W-1]
+#     gW=g[W-1]
+#     delta=tol*max(1.0,np.abs(gW).max())
+#     gx={int(l):fmpq(gq[l-1].numerator,gq[l-1].denominator) for l in W}
+#     # boundary facets of the region, with the ray of the inner cone opposite to them
+#     side={}
+#     for c in inner:
+#         for x in c:
+#             f=tuple(l for l in c if l!=x)
+#             if f in side:
+#                 del side[f]
+#             else:
+#                 side[f]=x
+#     near=np.array(outer)[np.isin(np.array(outer),W).sum(axis=1)>=dim-1] if outer else np.zeros((0,dim),dtype=int)
+#     outer_facets={tuple(l for l in c if l!=x) for c in near.tolist() for x in c}
+#     if any(R.intersection(f) or f not in outer_facets for f in side):
+#         raise ValueError("The fan must be complete around the rays to be contracted.")
+#     def normal(f,x):
+#         # primitive integral normal of span(f) with <n,x> > 0
+#         N,_=fmpz_mat(V[np.array(f)-1].tolist()).nullspace()
+#         n=np.array([int(N[i,0]) for i in range(dim)],dtype=np.int64)
+#         n//=np.gcd.reduce(np.abs(n))
+#         s=int(n@V[x-1])
+#         if s==0:
+#             raise ValueError(f"Degenerate cone at the facet {f}.")
+#         return n if s>0 else -n
+#     def wrap(f,n,boundary):
+#         F=np.array(f)
+#         B=np.vstack([V[F-1],n])
+#         coeff=np.linalg.solve(B.T.astype(float),WVf.T).T
+#         beta,gam=coeff[:,:-1],coeff[:,-1]
+#         sgn=WV@n
+#         cand=np.flatnonzero(sgn>0)
+#         if len(cand)==0:
+#             raise ValueError(f"The remaining rays do not span the region beyond the facet {f}.")
+#         base=gW-beta@g[F-1]
+#         res=base-(base[cand]/gam[cand]).min()*gam
+#         res[np.isin(W,F)]=np.inf
+#         if (res<-delta).any():
+#             raise ValueError(f"Inconsistent lifting at the facet {f}.")
+#         # exact recomputation for all rays within the margin of the lowest hyperplane through f
+#         Binv=fmpq_mat(fmpz_mat(B.T.tolist())).inv()
+#         gf=[gx[l] for l in f]
+#         ex={}
+#         for w in np.flatnonzero(res<=delta):
+#             c=Binv*fmpq_mat(dim,1,[int(x) for x in WV[w]])
+#             b=[c[i,0] for i in range(dim-1)]
+#             ex[w]=(gx[int(W[w])]-sum((bi*gi for bi,gi in zip(b,gf)),fmpq(0)),b,c[dim-1,0])
+#         t={w:e[0]/e[2] for w,e in ex.items() if sgn[w]>0}
+#         tq=min(t.values())
+#         for w,(bs,_,gm) in ex.items():
+#             r=bs-tq*gm
+#             if r<0:
+#                 raise ValueError(f"Inconsistent lifting at the facet {f}.")
+#             if boundary and sgn[w]<=0 and r==0:
+#                 raise ValueError(f"The facet {f} is not a strict lower face for the given heights; they must lie in the interior of the secondary cone of the fan.")
+#         tied=[w for w in t if t[w]==tq]
+#         if len(tied)>1:
+#             # lexicographic comparison of the eps^k coefficients of t(w), most significant label first
+#             cols=sorted(set(f)|{int(W[w]) for w in tied})
+#             def key(w):
+#                 _,b,gm=ex[w]
+#                 coef={int(W[w]):fmpq(1)/gm}
+#                 for x,bi in zip(f,b):
+#                     coef[x]=coef.get(x,fmpq(0))-bi/gm
+#                 return [coef.get(k,fmpq(0)) for k in cols]
+#             tied=[min(tied,key=key)]
+#         return int(W[tied[0]])
+#     rng=np.random.default_rng(0)
+#     open_facets={f:normal(f,x) for f,x in side.items()}
+#     boundary=set(side)
+#     closed=set()
+#     new=[]
+#     if not side:
+#         # the region is everything: start from the lower cone containing a generic vector, found by an LP
+#         lp=linprog(gW,A_eq=WVf.T,b_eq=WVf.T@(rng.random(len(W))+0.1),bounds=(0,None),method="highs")
+#         C=tuple(sorted(int(l) for l in W[lp.x>tol])) if lp.success else ()
+#         if len(C)!=dim:
+#             raise ValueError("Could not find a starting cone; the remaining rays may not span the space.")
+#         a=fmpq_mat(fmpz_mat(V[np.array(C)-1].tolist())).solve(fmpq_mat(dim,1,[gx[l] for l in C]))
+#         if any(gx[int(l)]-sum((int(v)*a[i,0] for i,v in enumerate(V[l-1])),fmpq(0))<=0 for l in W if l not in C):
+#             raise ValueError("The heights are degenerate at the starting cone; perturb them generically.")
+#         new.append(C)
+#         open_facets={tuple(l for l in C if l!=y):-normal(tuple(l for l in C if l!=y),y) for y in C}
+#     while open_facets:
+#         f,n=open_facets.popitem()
+#         a=wrap(f,n,f in boundary)
+#         C=tuple(sorted(f+(a,)))
+#         closed.add(f)
+#         for y in C:
+#             h=tuple(l for l in C if l!=y)
+#             if h==f:
+#                 continue
+#             if h in open_facets:
+#                 if open_facets[h]@V[y-1]<=0:
+#                     raise ValueError(f"Inconsistent orientation at the facet {h}.")
+#                 del open_facets[h]
+#                 closed.add(h)
+#             elif h in closed:
+#                 raise ValueError(f"The facet {h} is covered more than twice.")
+#             else:
+#                 open_facets[h]=-normal(h,y)
+#         new.append(C)
+#         if len(new)>100*len(inner)+1000:
+#             raise RuntimeError("Gift wrapping did not terminate.")
+#     # sanity check: generic points of the old cones lie in exactly one new cone and vice versa
+#     def hits(cs_pts,cs):
+#         P=np.einsum("ij,ijk->ik",rng.random((len(cs_pts),dim))+0.1,Vf[np.array(cs_pts)-1])
+#         inv=np.linalg.inv(Vf[np.array(cs)-1].transpose(0,2,1))
+#         step=max(1,2_000_000//(len(cs)*dim))
+#         return np.concatenate([(np.einsum("cij,pj->cpi",inv,P[i:i+step])>=-1e-9).all(axis=2).sum(axis=0) for i in range(0,len(P),step)])
+#     if (hits(inner,new)!=1).any() or (hits(new,inner)!=1).any():
+#         raise RuntimeError("The new cones do not cover the region of the contracted rays exactly once.")
+#     unused=set(keep)-set().union(*outer,*new)
+#     if unused:
+#         warnings.warn(f"The rays {sorted(unused)} are not used by the contracted fan (not lower for the given heights).")
+#     return Fan(vc=VectorConfiguration(V[np.array(keep)-1]),cones=[tuple(relabel[l] for l in c) for c in outer+new])
 
 def reorder_fan(fan: Fan,vectors: ArrayLike)->Fan:
     """
