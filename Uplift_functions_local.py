@@ -4447,21 +4447,36 @@ def intersection_number_surfaces(IN: Mapping[tuple[int,...],int|float],basis_len
         new_IN[(offset[k]+l,i,j)]=val
     return dict(sorted(new_IN.items())),surface_dict
 
-def tensor_symm_in_basis(tensor: Mapping[int,Any]|Mapping[tuple[int,...],Any],basis: ArrayLike,Q: ArrayLike|None=None,tol: float=1e-5)->dict[int,Any]|dict[tuple[int,...],Any]:
+def tensor_symm_in_basis(tensor: Mapping[int,Any]|Mapping[tuple[int,...],Any],basis: ArrayLike,Q: ArrayLike|None=None,tol: float=1e-5,in_prime_basis: bool|None=None)->dict[int,Any]|dict[tuple[int,...],Any]:
     """
     **Description:**
     Transform a symmetric divisor tensor from prime-toric divisors
     to a chosen prime-toric or GLSM divisor basis.
     Prime-toric indices are 1-based.
+    If the tensor is already given in the prime toric basis (keyed by one-indexed basis positions), the restriction
+    to the basis is skipped and only the GLSM transformation is applied (if `Q` is given).
+    By default this is detected automatically: the tensor counts as being in the prime toric basis iff all of its
+    indices are at most `len(basis)`. For `basis = [1,...,len(basis)]` both readings agree.
     **Arguments:**
-    - `tensor (Mapping[int,Any]|Mapping[tuple[int,...],Any])`: The symmetric tensor in terms of all prime toric divisors, keyed by labels (rank 1) or sorted label tuples.
+    - `tensor (Mapping[int,Any]|Mapping[tuple[int,...],Any])`: The symmetric tensor in terms of all prime toric divisors or of the prime toric basis, keyed by labels (rank 1) or sorted label tuples.
     - `basis (ArrayLike)`: The one-indexed labels of the prime toric divisors forming the basis.
     - `Q (ArrayLike|None)`: GLSM charge matrix; if given, the result is further transformed to the GLSM basis given by the rows of Q. Defaults to `None`.
     - `tol (float)`: Tolerance for dropping and rounding entries in the GLSM transformation. Defaults to `1e-5`.
+    - `in_prime_basis (bool|None)`: Whether `tensor` is already in the prime toric basis; `None` detects it automatically. Defaults to `None`.
     **Returns:**
     - `dict[int,Any]|dict[tuple[int,...],Any]`: The tensor in the new basis, keyed by one-indexed basis positions (rank 1) or sorted tuples of them.
     """
-    out=tensor_symm_in_prime_basis(tensor,basis)
+    if np.ndim(basis)!=1 or (Q is not None and np.ndim(Q)!=2):
+        raise ValueError(f"Expected a 1D `basis` and a 2D `Q`, got shapes {np.shape(basis)} and {np.shape(Q)}; note the argument order (tensor,basis,Q).")
+    if not tensor:
+        return {}
+    if in_prime_basis is None:
+        h=len(basis)
+        if isinstance(next(iter(tensor)),(int,np.integer)):
+            in_prime_basis=all(i<=h for i in tensor)
+        else:
+            in_prime_basis=all(i<=h for key in tensor for i in key)
+    out=dict(tensor) if in_prime_basis else tensor_symm_in_prime_basis(tensor,basis)
     if Q is not None:
         out=tensor_symm_in_glsm_basis(out,Q,basis,tol=tol)
     return out
@@ -5280,12 +5295,19 @@ def intersection_form_H22_vertical_from_gram_matrix(M: ArrayLike)->tuple[np.ndar
     - `M (ArrayLike)`: (N,N) integer Gram matrix on the products.
     **Returns:**
     - `tuple[np.ndarray,np.ndarray]`: C (r,N) integer: row k = coefficients of the k-th Z-basis vector e_k
-        in the N products, and G = C M C^T, the intersection form on that basis (both of object dtype).
+        in the N products, and G = C M C^T, the intersection form on that basis (both int64).
+    **Raises:**
+    - `OverflowError`: Raised if an entry of C or G does not fit into int64.
     """
     M=np.asarray(M,dtype=object)
-    H, U=fmpz_mat(M.tolist()).hnf(transform=True)
-    C=np.array(U.tolist(),dtype=object)[:H.rank()]
-    return C, C@M@C.T
+    N=len(M)
+    M=fmpz_mat(M.tolist())
+    H, U=M.hnf(transform=True)
+    r=H.rank()
+    C=fmpz_mat(r,N,[x for row in U.tolist()[:r] for x in row])
+    G=C*M*C.transpose()
+    to_int64=lambda X,n,m: np.array([int(x) for row in X.tolist() for x in row],dtype=np.int64).reshape(n,m)
+    return to_int64(C,r,N), to_int64(G,r,r)
 
 def intersection_form_H22_vertical(IN_in_basis: Mapping[tuple[int,...],int|float])->tuple[np.ndarray,np.ndarray,dict[int,tuple[int,int]],np.ndarray]:
     """
@@ -5490,7 +5512,7 @@ def tensor_symm_in_glsm_basis(tensor: Mapping[int,int|float]|Mapping[tuple[int,.
             for _ in range(rank-1):
                 S=np.tensordot(S,Aa,axes=([1],[0]))
             for a in range(a0,a1):
-                idx=UF._sorted_index_tuples(h-a,rank-1)+a if rank>1 else np.empty((1,0),dtype=np.intp)
+                idx=_sorted_index_tuples(h-a,rank-1)+a if rank>1 else np.empty((1,0),dtype=np.intp)
                 v=np.atleast_1d(S[a-a0][tuple((idx-a0).T)])
                 keep=np.abs(v)>=tol
                 keys.append(np.column_stack([np.full(keep.sum(),a),idx[keep]]))
