@@ -1246,47 +1246,47 @@ def refine_fan(fan,blowups_or_all_vectors=None,tol=1e-10):
                 fast=False
     return Fan(vc=vc,cones=cones)
 
-def refine_fan_old(fan: Fan,blowups_or_all_vectors: np.ndarray|None=None)->Fan:
-    """
-    **Description:**
-    Adds new rays to a fan and star-subdivides the cones containing them. If no new vectors are given, the vector configuration of the fan is used to detect rays not already present in the fan.
-    **Arguments:**
-    - `fan (Fan)`: The toric fan to refine.
-    - `blowups_or_all_vectors (np.ndarray|None)`: Blowup rays or a full vector configuration containing the old rays and new rays. Defaults to `None`.
-    **Returns:**
-    - `Fan`: The refined toric fan.
-    """
-    if blowups_or_all_vectors is not None:
-        blowups=row_difference(blowups_or_all_vectors,fan.vc.vectors())
-        all_vectors=np.concatenate((fan.vc.vectors(),blowups),axis=0)
-        vc_all=VectorConfiguration(all_vectors)
-        new_fan=Fan(vc_all,cones=fan.cones())
-    else: 
-        new_fan=fan
-    vec_diff=row_difference(new_fan.vc.vectors(),new_fan.vectors())
-    to_be_refined=set(new_fan.vc.vectors_to_labels(vec_diff))
-    if fan.dim==len(new_fan.vc.vectors()[0]):
-        for label in to_be_refined:
-            all_cones=set(new_fan.cones())
-            link_base=tuple(find_cone(new_fan.vc.vectors(label),all_cones,new_fan.vc.vectors()))
-            link_base_len=len(link_base)
-            for c in new_fan.link(link_base):
-                all_cones.discard(tuple(sorted(link_base+c)))
-                for comb in combinations(link_base,link_base_len-1):
-                    all_cones.add(tuple(sorted(comb+c+(label,))))
-            new_fan=Fan(vc=new_fan.vc,cones=all_cones)
-        return new_fan
-    else:
-        for label in to_be_refined:
-            all_cones=set(new_fan.cones())
-            link_base=tuple(find_cone_general(new_fan.vc.vectors(label),all_cones,all_vectors))
-            link_base_len=len(link_base)
-            for c in new_fan.link(link_base):
-                all_cones.discard(tuple(sorted(link_base+c)))
-                for comb in combinations(link_base,link_base_len-1):
-                    all_cones.add(tuple(sorted(comb+c+(label,))))
-            new_fan=Fan(vc=new_fan.vc,cones=all_cones)
-        return new_fan
+# def refine_fan_old(fan: Fan,blowups_or_all_vectors: np.ndarray|None=None)->Fan:
+#     """
+#     **Description:**
+#     Adds new rays to a fan and star-subdivides the cones containing them. If no new vectors are given, the vector configuration of the fan is used to detect rays not already present in the fan.
+#     **Arguments:**
+#     - `fan (Fan)`: The toric fan to refine.
+#     - `blowups_or_all_vectors (np.ndarray|None)`: Blowup rays or a full vector configuration containing the old rays and new rays. Defaults to `None`.
+#     **Returns:**
+#     - `Fan`: The refined toric fan.
+#     """
+#     if blowups_or_all_vectors is not None:
+#         blowups=row_difference(blowups_or_all_vectors,fan.vc.vectors())
+#         all_vectors=np.concatenate((fan.vc.vectors(),blowups),axis=0)
+#         vc_all=VectorConfiguration(all_vectors)
+#         new_fan=Fan(vc_all,cones=fan.cones())
+#     else: 
+#         new_fan=fan
+#     vec_diff=row_difference(new_fan.vc.vectors(),new_fan.vectors())
+#     to_be_refined=set(new_fan.vc.vectors_to_labels(vec_diff))
+#     if fan.dim==len(new_fan.vc.vectors()[0]):
+#         for label in to_be_refined:
+#             all_cones=set(new_fan.cones())
+#             link_base=tuple(find_cone(new_fan.vc.vectors(label),all_cones,new_fan.vc.vectors()))
+#             link_base_len=len(link_base)
+#             for c in new_fan.link(link_base):
+#                 all_cones.discard(tuple(sorted(link_base+c)))
+#                 for comb in combinations(link_base,link_base_len-1):
+#                     all_cones.add(tuple(sorted(comb+c+(label,))))
+#             new_fan=Fan(vc=new_fan.vc,cones=all_cones)
+#         return new_fan
+#     else:
+#         for label in to_be_refined:
+#             all_cones=set(new_fan.cones())
+#             link_base=tuple(find_cone_general(new_fan.vc.vectors(label),all_cones,all_vectors))
+#             link_base_len=len(link_base)
+#             for c in new_fan.link(link_base):
+#                 all_cones.discard(tuple(sorted(link_base+c)))
+#                 for comb in combinations(link_base,link_base_len-1):
+#                     all_cones.add(tuple(sorted(comb+c+(label,))))
+#             new_fan=Fan(vc=new_fan.vc,cones=all_cones)
+#         return new_fan
 
 def find_cone_general(new_ray: ArrayLike,current_cones: Iterable[tuple[int,...]],all_vectors: np.ndarray)->frozenset[int]|None:
     """
@@ -1499,6 +1499,8 @@ def hodge_numbers_weighted(O: CY_orientifold)->dict[str,int|np.integer]:
     pol=O.polytope()
     if not pol.is_reflexive():
         raise ValueError("Weighted Hodge Numbers can only be computed if the original CY is defined by a reflexive polytope")
+    if not pol.dim()==4:
+        raise ValueError("Weighted Hodge Numbers can only be computed if the original CY is defined by a reflexive polytope of dimension 4")
     hodge_numbers={}
     if pol.is_favorable(lattice="N"):
         hodge_numbers["h11-"]=0
