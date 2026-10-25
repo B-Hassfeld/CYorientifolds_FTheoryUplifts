@@ -39,7 +39,7 @@ from cytools import Polytope, fetch_polytopes
 from cytools.vector_config import VectorConfiguration
 from cytools.vector_config.fan import Fan
 # from cytools.f_theory import Uplift_functions as UF
-from . import Uplift_functions_local as UF
+from . import Uplift_functions as UF
 from numpy.typing import ArrayLike
 if TYPE_CHECKING:
     from cytools import Cone

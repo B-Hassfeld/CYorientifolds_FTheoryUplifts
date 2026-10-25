@@ -53,7 +53,7 @@ import ppl
 from cygv import compute_gv
 from numpy.typing import ArrayLike
 if TYPE_CHECKING:
-    from .FT_CY_local import CY_orientifold, F_Theory_Uplift
+    from .FT_CY import CY_orientifold, F_Theory_Uplift
 
 def compute_partition(divisors: Sequence[np.ndarray],rays: np.ndarray)->tuple[bool,np.ndarray|None]:
     """
