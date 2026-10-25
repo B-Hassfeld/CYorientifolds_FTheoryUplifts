@@ -23,40 +23,36 @@ from __future__ import annotations
 from itertools import combinations, combinations_with_replacement, permutations, product
 from collections.abc import Iterable, Mapping, Sequence
 from collections import defaultdict, Counter
-from dataclasses import dataclass
 from fractions import Fraction
-from functools import cache, lru_cache
-from math import comb,factorial
-from time import perf_counter
+from functools import cache
+from math import comb,factorial, prod
 import warnings
-from typing import TYPE_CHECKING, Any, Dict, FrozenSet, List, Literal, Optional, Tuple, overload
-import numpy as np
+from typing import TYPE_CHECKING, Any, Literal, overload
 import math
 # 3rd party imports
 import numpy as np
-import math
 import shutil
 import tempfile
 import subprocess
 import re
 from pathlib import Path
-from flint import fmpz_mat, fmpq_mat, fmpq
-from sympy import Matrix, ZZ
-from sympy.matrices.normalforms import smith_normal_decomp, smith_normal_form
+from flint import fmpz_mat
+from sympy import Matrix
+from sympy.matrices.normalforms import smith_normal_decomp
 from scipy.optimize import nnls
-from scipy.linalg import schur
+from scipy.linalg import schur, qr
 import scipy.sparse as sps
 from scipy.optimize import milp, LinearConstraint, linprog
+from scipy.spatial import ConvexHull
 # CYTools imports
 from cytools import Polytope, h_polytope, Cone
-from cytools.polytope import poly_v_to_h
 from cytools.utils import integral_nullspace, lll_reduce
 from cytools.vector_config.fan import Fan
 from cytools.vector_config import VectorConfiguration
-from cytools.polytopeface import PolytopeFace
+import ppl
+from cygv import compute_gv
 from numpy.typing import ArrayLike
 if TYPE_CHECKING:
-    from cytools.triangulation import Triangulation
     from .FT_CY_local import CY_orientifold, F_Theory_Uplift
 
 def compute_partition(divisors: Sequence[np.ndarray],rays: np.ndarray)->tuple[bool,np.ndarray|None]:
@@ -364,42 +360,62 @@ def points_from_glsm(glsm: ArrayLike)->np.ndarray:
     - `np.ndarray`: A toric point configuration, one point per row.
     """
     return integral_kernel(glsm).T
-
-def find_trilayer_vertex_polytope(p: Polytope,as_index: bool=False)->np.ndarray|np.intp:
+####Make one function accepting both a polytope and a list of vertices
+def find_trilayer_vertex(p_or_verts: Polytope|ArrayLike,as_index: bool=False)->np.ndarray|np.intp:
     """
     **Description:**
-    Uses the GLSM charge matrix of the vertices to identify the vertex corresponding to half the anticanonical class.
+    Uses the GLSM charge matrix of the vertices to identify the trilayer vertex, i.e. the vertex whose GLSM charges are half the anticanonical class.
     **Arguments:**
-    - `p (Polytope)`: The trilayer polytope.
+    - `p_or_verts (Polytope | ArrayLike)`: The trilayer polytope, or its vertices (one per row).
     - `as_index (bool)`: Whether to return the vertex index rather than the vertex coordinates. Defaults to `False`.
+    **Raises:**
+    - `ValueError`: Raised if no vertex corresponds to half the anticanonical class, i.e. the polytope is not trilayer.
     **Returns:**
-    - `np.ndarray | np.intp`: The distinguished vertex, or its index in `p.vertices()` if `as_index=True`.
+    - `np.ndarray | np.intp`: The trilayer vertex, or its row index in the vertex array (`p.vertices()` for a `Polytope`) if `as_index=True`.
     """
-    glsm_vert=glsm_from_points(p.vertices())
-    half_anticanon=np.sum(glsm_vert,axis=1)//2
-    index=get_indices(glsm_vert.T,np.array([half_anticanon]))[0]
-    if as_index:
-        return index
-    else:
-        return p.vertices()[index]
-
-def find_trilayer_vertex_vertices(V: np.ndarray,as_vertex_index: bool=False)->np.ndarray|np.intp:
-    """
-    **Description:**
-    Uses the GLSM charge matrix of the vertex set to identify the vertex corresponding to half the anticanonical class.
-    **Arguments:**
-    - `V (np.ndarray)`: The vertices of a trilayer polytope, one per row.
-    - `as_vertex_index (bool)`: Whether to return the vertex index rather than the vertex coordinates. Defaults to `False`.
-    **Returns:**
-    - `np.ndarray | np.intp`: The distinguished vertex, or its row index in `V` if `as_vertex_index=True`.
-    """
+    V=np.asarray(p_or_verts.vertices() if isinstance(p_or_verts,Polytope) else p_or_verts,dtype=int)
     glsm_vert=glsm_from_points(V)
-    half_anticanon=np.sum(glsm_vert,axis=1)//2
-    index=get_indices(glsm_vert.T,np.array([half_anticanon]))[0]
-    if as_vertex_index:
-        return index
-    else:
-        return V[index]
+    index=np.where(np.all(2*glsm_vert.T==np.sum(glsm_vert,axis=1),axis=1))[0]
+    if len(index)==0:
+        raise ValueError("Polytope is not trilayer.")
+    return index[0] if as_index else V[index[0]]
+
+
+# def find_trilayer_vertex_polytope(p: Polytope,as_index: bool=False)->np.ndarray|np.intp:
+#     """
+#     **Description:**
+#     Uses the GLSM charge matrix of the vertices to identify the vertex corresponding to half the anticanonical class.
+#     **Arguments:**
+#     - `p (Polytope)`: The trilayer polytope.
+#     - `as_index (bool)`: Whether to return the vertex index rather than the vertex coordinates. Defaults to `False`.
+#     **Returns:**
+#     - `np.ndarray | np.intp`: The distinguished vertex, or its index in `p.vertices()` if `as_index=True`.
+#     """
+#     glsm_vert=glsm_from_points(p.vertices())
+#     half_anticanon=np.sum(glsm_vert,axis=1)//2
+#     index=get_indices(glsm_vert.T,np.array([half_anticanon]))[0]
+#     if as_index:
+#         return index
+#     else:
+#         return p.vertices()[index]
+
+# def find_trilayer_vertex_vertices(V: np.ndarray,as_vertex_index: bool=False)->np.ndarray|np.intp:
+#     """
+#     **Description:**
+#     Uses the GLSM charge matrix of the vertex set to identify the vertex corresponding to half the anticanonical class.
+#     **Arguments:**
+#     - `V (np.ndarray)`: The vertices of a trilayer polytope, one per row.
+#     - `as_vertex_index (bool)`: Whether to return the vertex index rather than the vertex coordinates. Defaults to `False`.
+#     **Returns:**
+#     - `np.ndarray | np.intp`: The distinguished vertex, or its row index in `V` if `as_vertex_index=True`.
+#     """
+#     glsm_vert=glsm_from_points(V)
+#     half_anticanon=np.sum(glsm_vert,axis=1)//2
+#     index=get_indices(glsm_vert.T,np.array([half_anticanon]))[0]
+#     if as_vertex_index:
+#         return index
+#     else:
+#         return V[index]
 
 def trilayer_normal_form(p: Polytope)->Polytope:
     """
@@ -411,7 +427,7 @@ def trilayer_normal_form(p: Polytope)->Polytope:
     - `Polytope`: The polytope in trilayer normal form.
     """
     verts=p.vertices()
-    index=find_trilayer_vertex_vertices(verts,as_vertex_index=True)
+    index=find_trilayer_vertex(verts,as_index=True)
     verts[[0,index]]=verts[[index,0]]
     a,s,t=snf(verts,return_decomposition=True)
     b=np.ones(len(verts),dtype=int)
@@ -428,6 +444,7 @@ def trilayer_normal_form(p: Polytope)->Polytope:
     for i in range(1,p.ambient_dim()):
         U0[i]=U0[i]+M[i,0]*U0[0]
     return Polytope((U0@verts.T).T)
+###Make lowercase Newton_Polytope->newton_polytope
 
 def Newton_Polytope(pts: ArrayLike,weights: ArrayLike)->h_polytope.HPolytope:
     """
@@ -452,6 +469,7 @@ def row_difference(A: np.ndarray,B: np.ndarray)->np.ndarray:
     - `np.ndarray`: Rows of `A` that are not rows of `B`.
     """
     return A[~np.any((A[:,None,:]==B[None,:,:]).all(axis=2),axis=1)]
+##Obsolete I think
 
 def points_not_interior_to_facets_and_codim2_faces(p: Polytope)->np.ndarray:
     """
@@ -578,6 +596,7 @@ def inequivalent_Z2_actions(lattice_symmetries: Sequence[np.ndarray]|np.ndarray)
     inequivalent_t_possibilities={frozenset([tuple(y) for y in x]) for x in  np.transpose(np.array([np.mod(s@(t_possibilities.T),2) for s in lattice_symmetries]),[2,0,1])}
     inequivalent_t_possibilities=np.array([[y for y in x][0] for x in inequivalent_t_possibilities])
     return inequivalent_t_possibilities
+#lower case
 
 def linebundle_weights_from_Newton_Polytope(vectors: np.ndarray,Newton_polytope: Polytope)->np.ndarray:
     """
@@ -590,6 +609,7 @@ def linebundle_weights_from_Newton_Polytope(vectors: np.ndarray,Newton_polytope:
     - `np.ndarray`: The divisor coefficient vector.
     """
     return np.max(-(vectors@Newton_polytope.points().T),axis=1)
+#whats the diff?
 
 def is_Gorenstein_full_dim(cone: Cone)->tuple[bool,np.ndarray|None]:
     """
@@ -652,6 +672,7 @@ def is_reflexive_Gorenstein(cone: Cone)->bool:
         if is_Gorenstein(dual_cone)[0]:
             return True
     return False
+#lower_case
 
 def Gorenstein_index(cone: Cone)->np.integer:
     """
@@ -668,6 +689,7 @@ def Gorenstein_index(cone: Cone)->np.integer:
         dual_cone=cone.dual()
         return is_Gorenstein(cone)[1]@is_Gorenstein(dual_cone)[1]
     raise ValueError("Cone is not reflexive Gorenstein")
+#lower_case
 
 def Cartier_index(toric_fan: Fan,weights: ArrayLike)->int|None:
     """
@@ -693,6 +715,7 @@ def Cartier_index(toric_fan: Fan,weights: ArrayLike)->int|None:
             k+=1
         indices.append(k)
     return math.lcm(*indices)
+#lower_case
 
 def is_Cartier(toric_fan: Fan,weights: ArrayLike,return_Q_Cartier_data: bool=False,decimals: int=10)->tuple[bool,list[np.ndarray|None]|None]:
     """
@@ -802,6 +825,7 @@ def generic_section_factorizes(points: np.ndarray,linebundle_weights: np.ndarray
     except ValueError:
         return True
     return~np.all(np.any(points@NP.points().T+linebundle_weights[:,None]!=0,axis=1))
+#obsolete
 
 def attempt_to_make_nef(toric_variety: Fan,line_bundle: ArrayLike,epsilon: float=1e-5)->Fan:
     """
@@ -818,6 +842,7 @@ def attempt_to_make_nef(toric_variety: Fan,line_bundle: ArrayLike,epsilon: float
     hts0=toric_variety.heights()+epsilon*np.array([(np.sin(i+1)+1) for i in range(len(line_bundle))])
     hts1=line_bundle
     return toric_variety.vc.triangulate(heights=hts1/epsilon+hts0)
+#Make one function
 
 def basis(points: np.ndarray)->list[int]:
     """
@@ -841,6 +866,57 @@ def basis(points: np.ndarray)->list[int]:
             return basis_indices
     raise ValueError("No basis could be found")
 
+def basis_H2_toric_fan(toric_fan: Fan)->np.ndarray:
+    """
+    **Description:**
+    Finds a smooth maximal cone and returns the complementary ray labels, giving a convenient GLSM or curve-homology basis.
+    **Arguments:**
+    - `toric_fan (Fan)`: The toric fan.
+    **Raises:**
+    - `ValueError`: Raised if no smooth maximal cone is found.
+    **Returns:**
+    - `np.ndarray`: One-indexed ray labels forming the basis.
+    """
+    for c in toric_fan.cones():
+        if Cone(toric_fan.vectors(c)).is_smooth():
+            mask=np.ones(len(toric_fan.vectors()),dtype=bool)
+            mask[np.array(c)-1]=False
+            basis=np.arange(1,len(mask)+1)[mask]
+            return basis
+    raise ValueError("No basis could be found")
+
+def cone_indices(fan: Fan,cones: Iterable[Iterable[int]])->list[int]:
+    """
+    **Description:**
+    Computes the index [N ∩ span(σ) : Z⟨rays of σ⟩] of every cone σ, i.e. the product of the nonzero Smith normal form invariants of its ray matrix. For a simplicial cone this is its multiplicity (|det| of the rays for a full-dimensional one), and the cone is smooth iff the index is 1. For a non-simplicial cone it is only the index of the lattice generated by its rays; such a cone is never smooth.
+    The product of the nonzero invariants of a rank-r matrix is its r-th determinantal divisor, the gcd of all r×r minors, so all cones with the same number of rays are handled at once with batched floating-point determinants (exact as long as the minors stay well below 2^53). The rank is found by lowering r from min(#rays, dim) until the gcd is nonzero, which only costs extra for non-simplicial cones.
+    **Arguments:**
+    - `fan (Fan)`: The toric fan.
+    - `cones (Iterable[Iterable[int]])`: The cones, as tuples of one-indexed ray labels of `fan`.
+    **Returns:**
+    - `list[int]`: The index of each cone, in the order of `cones`.
+    """
+    V=np.asarray(fan.vectors())
+    row={l:i for i,l in enumerate(fan.used_labels)}
+    cones=[[row[l] for l in c] for c in cones]
+    out=np.ones(len(cones),dtype=np.int64)
+    groups=defaultdict(list)
+    for i,c in enumerate(cones):
+        groups[len(c)].append(i)
+    for k,idx in groups.items():
+        if k==0:
+            continue
+        idx=np.array(idx)
+        R=V[np.array([cones[i] for i in idx])]
+        for r in range(min(k,V.shape[1]),0,-1):
+            minors=np.stack([np.linalg.det(R[:,list(rows)][:,:,list(cols)]) for rows in combinations(range(k),r) for cols in combinations(range(V.shape[1]),r)],axis=1)
+            g=np.gcd.reduce(np.abs(np.rint(minors)).astype(np.int64),axis=1)
+            out[idx[g>0]]=g[g>0]
+            idx,R=idx[g==0],R[g==0]
+            if len(idx)==0:
+                break
+    return out.tolist()
+
 def attempt_to_make_Cartier(tri: Fan,D: np.ndarray)->tuple[Fan,np.ndarray]:
     """
     **Description:**
@@ -863,6 +939,7 @@ def attempt_to_make_Cartier(tri: Fan,D: np.ndarray)->tuple[Fan,np.ndarray]:
         new_D=np.concatenate((D,inequalities[:,-1][indices_new_points]))
         tri_Cartier=attempt_to_make_nef(new_vc.triangulate(),new_D)
         return (tri_Cartier,new_D)
+#make one function
 
 def BL(fan: Fan,lb: np.ndarray)->list[tuple[int,...]]:
     """
@@ -1026,6 +1103,7 @@ def flatten(lst: list[Any],depth: int)->list[Any]:
         else:
             result.append(x)
     return result
+#obsolete
 
 def O7_cones(vc_orbifold: Fan,O7_labels: Iterable[int],d: int)->list[tuple[int,...]]:
     """
@@ -1041,25 +1119,6 @@ def O7_cones(vc_orbifold: Fan,O7_labels: Iterable[int],d: int)->list[tuple[int,.
     d_cones=get_lower_dimensional_cones(vc_orbifold.cones(),d)
     relevant_d_cones=[t for t in d_cones if set(t).issubset(O7_labels)]
     return relevant_d_cones
-
-def basis_H2_toric_fan(toric_fan: Fan)->np.ndarray:
-    """
-    **Description:**
-    Finds a smooth maximal cone and returns the complementary ray labels, giving a convenient GLSM or curve-homology basis.
-    **Arguments:**
-    - `toric_fan (Fan)`: The toric fan.
-    **Raises:**
-    - `ValueError`: Raised if no smooth maximal cone is found.
-    **Returns:**
-    - `np.ndarray`: One-indexed ray labels forming the basis.
-    """
-    for c in toric_fan.cones():
-        if Cone(toric_fan.vectors(c)).is_smooth():
-            mask=np.ones(len(toric_fan.vectors()),dtype=bool)
-            mask[np.array(c)-1]=False
-            basis=np.arange(1,len(mask)+1)[mask]
-            return basis
-    raise ValueError("No basis could be found")
 
 def trilayer_5d_Ftheory_uplift(p: Polytope,verbosity: int=1)->Polytope:
     """
@@ -1138,14 +1197,13 @@ def solve_over_integers(M: ArrayLike,b: ArrayLike)->tuple[bool,np.ndarray|None]:
     - `tuple[bool,np.ndarray|None]`: A pair `(has_solution, x)`, where `x` is an integral solution if one exists, otherwise `None`.
     """
     a,s,t=snf(M,return_decomposition=True)
-    c=-s@b
+    c=s@np.asarray(b,dtype=int)
     y=np.zeros(a.shape[1],dtype=int)
     for ii in range(np.min(a.shape)):
         if a[ii,ii]!=0:
-            y[ii]=c[ii]/a[ii,ii]
-        else:
-            if c[ii]!=0:
-                print("PROBLEM")
+            if c[ii]%a[ii,ii]!=0:
+                return (False,None)
+            y[ii]=c[ii]//a[ii,ii]
     if np.all(a@y==c):
         return (True,t@y)
     else:
@@ -1245,7 +1303,6 @@ def refine_fan(fan,blowups_or_all_vectors=None,tol=1e-10):
             except np.linalg.LinAlgError:
                 fast=False
     return Fan(vc=vc,cones=cones)
-
 # def refine_fan_old(fan: Fan,blowups_or_all_vectors: np.ndarray|None=None)->Fan:
 #     """
 #     **Description:**
@@ -1287,6 +1344,7 @@ def refine_fan(fan,blowups_or_all_vectors=None,tol=1e-10):
 #                     all_cones.add(tuple(sorted(comb+c+(label,))))
 #             new_fan=Fan(vc=new_fan.vc,cones=all_cones)
 #         return new_fan
+#Make just one find_cone function that can accept both with option full_dim=True/False
 
 def find_cone_general(new_ray: ArrayLike,current_cones: Iterable[tuple[int,...]],all_vectors: np.ndarray)->frozenset[int]|None:
     """
@@ -1351,48 +1409,6 @@ def find_cone_general(new_ray: ArrayLike,current_cones: Iterable[tuple[int,...]]
             return face
     return None
 
-def array_to_latex(arr: np.ndarray,as_fractions: bool=False,max_denominator: int=10**6)->str:
-    """
-    **Description:**
-    Converts a two-dimensional NumPy array into a LaTeX `pmatrix` string.
-    **Arguments:**
-    - `arr (np.ndarray)`: The two-dimensional array to convert.
-    - `as_fractions (bool)`: Whether to write the entries as fractions `\\frac{p}{q}` instead of decimals. Defaults to `False`.
-    - `max_denominator (int)`: Largest denominator used when approximating floating point entries by fractions. Defaults to `10**6`.
-    **Raises:**
-    - `ValueError`: Raised if `arr` has more than two dimensions.
-    **Returns:**
-    - `str`: A LaTeX `pmatrix` representation of the array.
-    """
-    if len(arr.shape)>2:
-        raise ValueError("Only 2D matrices are supported.")
-    def to_frac(x):
-        f=Fraction(x) if isinstance(x,(int,np.integer,Fraction)) else Fraction(float(x)).limit_denominator(max_denominator)
-        if f.denominator==1:
-            return str(f.numerator)
-        return ("-" if f<0 else "")+rf"\frac{{{abs(f.numerator)}}}{{{f.denominator}}}"
-    fmt=to_frac if as_fractions else str
-    lines=["            "+" & ".join(map(fmt,row))+r" \\" for row in arr]
-    return "\\begin{pmatrix}\n"+"\n".join(lines)+"\n        \\end{pmatrix}"
-
-def integral_gale_transform(points: ArrayLike)->np.ndarray:
-    """
-    **Description:**
-    Lifts the input points by appending a column of ones, and computes a saturated, LLL-reduced integral basis of the linear relations among the lifted points (the integral Gale transform).
-    **Arguments:**
-    - `points (ArrayLike)`: Point configuration with shape `(n, d)`.
-    **Raises:**
-    - `ValueError`: Raised if the number of points is not greater than `d+1`.
-    **Returns:**
-    - `np.ndarray`: The integral Gale transform.
-    """
-    points=np.array(points)
-    n, d=points.shape
-    if n<=d+1:
-        raise ValueError(f"Need strictly more points (n={n}) than dimensions + 1 (d+1={d+1}).")
-    lifted_points=np.hstack((points,np.ones((n,1),dtype=int)))
-    return integral_kernel(lifted_points.T)
-
 def find_cone(new_ray: ArrayLike,current_cones: Iterable[tuple[int,...]],all_vectors: np.ndarray,tol: float=1e-10)->frozenset[int]|None:
     """
     **Description:**
@@ -1426,6 +1442,49 @@ def find_cone(new_ray: ArrayLike,current_cones: Iterable[tuple[int,...]],all_vec
         return None
     return frozenset(idx for idx,coeff in zip(cones[hit[0]],coeffs[hit[0]]) if coeff>tol)
 
+def array_to_latex(arr: np.ndarray,as_fractions: bool=False,max_denominator: int=10**6)->str:
+    """
+    **Description:**
+    Converts a two-dimensional NumPy array into a LaTeX `pmatrix` string.
+    **Arguments:**
+    - `arr (np.ndarray)`: The two-dimensional array to convert.
+    - `as_fractions (bool)`: Whether to write the entries as fractions `\\frac{p}{q}` instead of decimals. Defaults to `False`.
+    - `max_denominator (int)`: Largest denominator used when approximating floating point entries by fractions. Defaults to `10**6`.
+    **Raises:**
+    - `ValueError`: Raised if `arr` has more than two dimensions.
+    **Returns:**
+    - `str`: A LaTeX `pmatrix` representation of the array.
+    """
+    if len(arr.shape)>2:
+        raise ValueError("Only 2D matrices are supported.")
+
+    def to_frac(x):
+        f=Fraction(x) if isinstance(x,(int,np.integer,Fraction)) else Fraction(float(x)).limit_denominator(max_denominator)
+        if f.denominator==1:
+            return str(f.numerator)
+        return ("-" if f<0 else "")+rf"\frac{{{abs(f.numerator)}}}{{{f.denominator}}}"
+    fmt=to_frac if as_fractions else str
+    lines=["            "+" & ".join(map(fmt,row))+r" \\" for row in arr]
+    return "\\begin{pmatrix}\n"+"\n".join(lines)+"\n        \\end{pmatrix}"
+
+def integral_gale_transform(points: ArrayLike)->np.ndarray:
+    """
+    **Description:**
+    Lifts the input points by appending a column of ones, and computes a saturated, LLL-reduced integral basis of the linear relations among the lifted points (the integral Gale transform).
+    **Arguments:**
+    - `points (ArrayLike)`: Point configuration with shape `(n, d)`.
+    **Raises:**
+    - `ValueError`: Raised if the number of points is not greater than `d+1`.
+    **Returns:**
+    - `np.ndarray`: The integral Gale transform.
+    """
+    points=np.array(points)
+    n, d=points.shape
+    if n<=d+1:
+        raise ValueError(f"Need strictly more points (n={n}) than dimensions + 1 (d+1={d+1}).")
+    lifted_points=np.hstack((points,np.ones((n,1),dtype=int)))
+    return integral_kernel(lifted_points.T)
+
 def divisor_intersections(fan: Fan,intersection_dict: Mapping[tuple[int,...],float],divisors: Sequence[np.ndarray],basis_set: set[int],as_LLL: bool=True)->np.ndarray:
     """
     **Description:**
@@ -1444,8 +1503,8 @@ def divisor_intersections(fan: Fan,intersection_dict: Mapping[tuple[int,...],flo
     divisor_nonvanishing_sets=[]
     for div in divisors:
         divisor_nonvanishing_sets.append(set(np.where(div!=0)[0]+1))
-    curves_homology_in_basis=np.zeros((len(simplices),len(basis_set)),dtype=int)
-    basis_idx_map={b: idx for idx,b in enumerate(basis_set)}
+    curves_homology_in_basis=np.zeros((len(simplices),len(basis_set)),dtype=float)
+    basis_idx_map={b: idx for idx,b in enumerate(sorted(basis_set))}
     for s_idx, s in enumerate(simplices):
         star_s=fan.star(s)
         link_rays={item for sub_tuple in star_s for item in sub_tuple}
@@ -1463,8 +1522,12 @@ def divisor_intersections(fan: Fan,intersection_dict: Mapping[tuple[int,...],flo
                 coefficient=np.prod([divisors[a][ray-1]for a,ray in enumerate(ts)])
                 total_intersection+=coefficient*intersection_dict.get(key,0)
             curves_homology_in_basis[s_idx,i_idx]=total_intersection
+    rounded=np.rint(curves_homology_in_basis)
+    if not np.allclose(curves_homology_in_basis,rounded,atol=1e-6):
+        warnings.warn("divisor_intersections: non-integral curve classes encountered, rounding to the nearest integer.")
+    curves_homology_in_basis=rounded.astype(int)
     if as_LLL:
-        reduced=np.array(lll_reduce(np.asarray(curves_homology_in_basis,dtype=int).T)).T
+        reduced=np.array(lll_reduce(curves_homology_in_basis.T)).T
         return reduced[np.any(reduced!=0,axis=1)]
     return curves_homology_in_basis
 
@@ -1488,11 +1551,11 @@ def make_rows_integer(arr: ArrayLike,den: int=2)->np.ndarray:
 def hodge_numbers_weighted(O: CY_orientifold)->dict[str,int|np.integer]:
     """
     **Description:**
-    Computes the orientifold-even and -odd Hodge numbers `h^{1,1}_+`, `h^{1,1}_-`, `h^{2,1}_+` and `h^{2,1}_-` of the Calabi-Yau threefold of a reflexive polytope under the involution of `O`. `h^{1,1}_-` is zero for favorable polytopes and is otherwise obtained from the non-favorable 2-faces whose dual faces are exchanged by the involution; `h^{2,1}_-` follows from the Euler characteristic of the fixed locus via `h^{2,1}_- = h^{1,1}_- + (chi_I(O) - chi(X))/4 - 1`.
+    Computes the orientifold-even and -odd Hodge numbers `h^{1,1}_+`, `h^{1,1}_-`, `h^{2,1}_+` and `h^{2,1}_-` of the Calabi-Yau threefold of a reflexive polytope under the involution of `O`. `h^{1,1}_-` is zero for favorable polytopes and is otherwise obtained from the non-favorable 2-faces whose dual faces are exchanged by the involution; `h^{2,1}_-` follows from the Euler characteristic of the fixed locus via `h^{2,1}_- = h^{1,1}_- + (chi_I(O) - chi(X))/4 - 1` (Lefschetz), where chi(X) of the double cover described by the toric data of `O` must agree with the polytope.
     **Arguments:**
     - `O (CY_orientifold)`: The Calabi-Yau orientifold.
     **Raises:**
-    - `ValueError`: Raised if the polytope of `O` is not reflexive.
+    - `ValueError`: Raised if the polytope of `O` is not reflexive, if the orientifold-invariant Calabi-Yau is singular, or if the toric data of `O` describe a different Calabi-Yau than the polytope (e.g. after a refinement of the orbifold fan).
     **Returns:**
     - `dict[str,int|np.integer]`: Dictionary with keys `"h11+"`, `"h11-"`, `"h21+"` and `"h21-"`.
     """
@@ -1520,76 +1583,429 @@ def hodge_numbers_weighted(O: CY_orientifold)->dict[str,int|np.integer]:
                             h11m+=np.round(cf*(cfd+1)/2).astype(int)
         hodge_numbers["h11+"]=pol.h11()-h11m
         hodge_numbers["h11-"]=h11m
-    hodge_numbers["h21-"]=hodge_numbers.get("h11-")+np.round((chi_I(O)-pol.chi(lattice="N"))/4-1).astype(int)
+    fixed=_fixed_locus(O,return_chi=True)
+    if fixed["chi_X"]!=pol.chi(lattice="N"):
+        raise ValueError(f"The toric data of the orientifold describe a Calabi-Yau with chi={fixed['chi_X']}, not the one of the polytope (chi={pol.chi(lattice='N')}).")
+    hodge_numbers["h21-"]=hodge_numbers.get("h11-")+(fixed["chi_I"]-fixed["chi_X"])//4-1
     hodge_numbers["h21+"]=pol.h21()-hodge_numbers.get("h21-")
     return hodge_numbers
 
-def chi_I(O: CY_orientifold)->int:
+def orientifold_mod2_character(xi: ArrayLike)->np.ndarray:
     """
     **Description:**
-    Computes the Euler characteristic of the fixed locus of the orientifold involution as the sum of the O7-plane contribution `chi_O7` and the O3-plane contribution `chi_O3_uplift`.
+    Character mu of the orbifold lattice N'=N+Z*xi/2 (coordinates of `lattice_refinement(xi)`, i.e. of `vectors_orbifold()`)
+    that detects the original lattice: N={n' in N' : <mu,n'> even}. A ray of N' is mu-odd iff it is not in N, i.e. iff
+    its toric divisor is pointwise fixed by the orientifold involution.
     **Arguments:**
-    - `O (CY_orientifold)`: The Calabi-Yau orientifold.
+    - `xi (ArrayLike)`: The integer vector of the Z_2 action xi/2.
+    **Raises:**
+    - `ValueError`: Raised if `xi` is even, i.e. the action is trivial.
+    **Returns:**
+    - `np.ndarray`: mu with entries in {0,1}.
+    """
+    Lam=lattice_refinement(np.asarray(xi,dtype=int))
+    d=len(Lam)
+    for bits in range(1,2**d):
+        mu=(bits>>np.arange(d))&1
+        if not np.any((mu@Lam)%2):
+            return mu
+    raise ValueError("xi/2 does not define an index-2 refinement (xi = 0 mod 2?).")
+
+def _cones_by_dimension(fan)->list[np.ndarray]:
+    """
+    **Description:**
+    All cones of a simplicial fan, grouped by dimension, as arrays of zero-based ray indices (row d-1 holds the d-cones).
+    **Arguments:**
+    - `fan (Fan)`: A simplicial fan.
+    **Returns:**
+    - `list[np.ndarray]`: For d=1,...,dim the (C_d,d) arrays of d-cones.
+    """
+    maximal=[tuple(sorted(c)) for c in fan.cones()]
+    n=max(len(c) for c in maximal)
+    if n>fan.dim:
+        raise ValueError("The fan is not simplicial.")
+    return [np.array(sorted({f for c in maximal for f in combinations(c,d)}),dtype=int).reshape(-1,d)-1 for d in range(1,n+1)]
+
+def _saturated_kernel(M: ArrayLike)->np.ndarray:
+    """
+    **Description:**
+    Saturated integral basis of the kernel {x in Z^n : M x = 0}, computed by LLL on the embedding x -> (c*M x, x), so that
+    the result does not depend on the version of `integral_nullspace` (older versions return a finite-index sublattice).
+    **Arguments:**
+    - `M (ArrayLike)`: Integer matrix of shape (m,n); m=0 is allowed.
+    **Returns:**
+    - `np.ndarray`: The kernel basis as columns, shape (n,n-rank(M)).
+    """
+    M=np.asarray(M,dtype=np.int64)
+    m,n=M.shape
+    if m==0:
+        return np.eye(n,dtype=int)
+    rank=np.linalg.matrix_rank(M)
+    c=2**12*(1+int(np.abs(M).max()))
+    while True:
+        R=np.array(fmpz_mat(np.hstack([c*M.T,np.eye(n,dtype=np.int64)]).tolist()).lll().tolist(),dtype=object)
+        K=R[np.all(R[:,:m]==0,axis=1)][:,m:]
+        if len(K)==n-rank:
+            return K.astype(np.int64).T
+        c*=2**12
+
+def _normalized_volume(F: np.ndarray,K: np.ndarray)->int:
+    """
+    **Description:**
+    Normalized volume of conv(F) in the affine lattice F[0]+Z<columns of K>, where K is a saturated lattice basis and
+    conv(F) is full-dimensional in it.
+    **Arguments:**
+    - `F (np.ndarray)`: The points (at least the vertices), one per row.
+    - `K (np.ndarray)`: The lattice basis, as columns.
+    **Returns:**
+    - `int`: k! times the volume of conv(F) in the coordinates of K.
+    """
+    k=K.shape[1]
+    c=np.rint(np.linalg.lstsq(K.astype(float),(F-F[0]).T.astype(float),rcond=None)[0].T).astype(int)
+    if k==1:
+        return int(c.max()-c.min())
+    hull=ConvexHull(c)
+    if k==2:
+        x,y=c[hull.vertices].T
+        return abs(int(np.dot(x,np.roll(y,-1))-np.dot(y,np.roll(x,-1))))
+    return int(round(hull.volume*math.factorial(k)))
+
+def _orbit_pieces(V: np.ndarray,cones: np.ndarray,W: np.ndarray,E: np.ndarray,cache: dict)->tuple[np.ndarray,np.ndarray,np.ndarray]:
+    """
+    **Description:**
+    Euler characteristics and dimensions of a generic hypersurface on the torus orbits O(cone) of equal-dimensional cones.
+    The monomials surviving on O(cone) are the lattice points of the face of the Newton polytope cut out by the rays of
+    the cone. With k the orbit dimension: no surviving monomial means O(cone) lies in the hypersurface (chi=[k=0]); one
+    monomial means the orbit is missed; otherwise Kouchnirenko gives chi=(-1)^(k-1) Vol_k(face), normalized in the lattice
+    cone^perp, which vanishes unless the face is k-dimensional. Then cone^perp is the direction of the face, so the volume
+    only depends on the face and is cached per face.
+    **Arguments:**
+    - `V (np.ndarray)`: The rays, one per row.
+    - `cones (np.ndarray)`: Cones of one dimension, as rows of zero-based ray indices (shape (C,0) for the zero cone).
+    - `W (np.ndarray)`: The vertices of the Newton polytope, one per row.
+    - `E (np.ndarray)`: Boolean matrix, E[i,j] if vertex j lies on the face cut out by ray i.
+    - `cache (dict)`: Face cache shared between calls with the same `W`.
+    **Returns:**
+    - `tuple[np.ndarray,np.ndarray,np.ndarray]`: (chi, dim, number of face vertices) per cone, with dim=-1 for empty pieces.
+    """
+    n=V.shape[1]
+    k=n-cones.shape[1]
+    masks=E[cones].all(axis=1) if cones.shape[1] else np.ones((len(cones),len(W)),dtype=bool)
+    n_vert=masks.sum(axis=1)
+    chi=np.zeros(len(cones),dtype=np.int64)
+    dim=np.where(n_vert==0,k,np.where(n_vert==1,-1,k-1))
+    if k==0:
+        chi[n_vert==0]=1
+    for i in np.flatnonzero(n_vert>=2):
+        key=masks[i].tobytes()
+        if key not in cache:
+            F=W[masks[i]]
+            cache[key]=np.linalg.matrix_rank(F[1:]-F[0]),None,F
+        rank,vol,F=cache[key]
+        if rank<k:
+            continue
+        if vol is None:
+            K=_saturated_kernel(V[cones[i]])
+            vol=_normalized_volume(F,K)
+            cache[key]=rank,vol,F
+        chi[i]=(-1)**(k-1)*vol
+    return chi,dim,n_vert
+
+def _fixed_cones(V: np.ndarray,cones: np.ndarray,mu: np.ndarray,odd: np.ndarray)->np.ndarray:
+    """
+    **Description:**
+    Tests which cones are pointwise fixed by the orientifold involution, i.e. whether mu is odd on the saturated lattice
+    span(cone) cap N'. Cones with a mu-odd ray are fixed, maximal cones always are, and otherwise only cones whose rays span
+    a sublattice of even index can be fixed (then the saturation is computed explicitly).
+    **Arguments:**
+    - `V (np.ndarray)`: The orbifold rays, one per row.
+    - `cones (np.ndarray)`: The cones of one dimension, as rows of zero-based ray indices.
+    - `mu (np.ndarray)`: The character from `orientifold_mod2_character`.
+    - `odd (np.ndarray)`: Boolean array, True for mu-odd rays.
+    **Returns:**
+    - `np.ndarray`: Boolean array with one entry per cone.
+    """
+    n=V.shape[1]
+    d=cones.shape[1]
+    if d==n:
+        return np.ones(len(cones),dtype=bool)
+    fixed=odd[cones].any(axis=1)
+    rest=np.flatnonzero(~fixed)
+    if len(rest)==0:
+        return fixed
+    M=V[cones[rest]].astype(float)
+    minors=np.stack([np.rint(np.linalg.det(M[:,:,list(c)])) for c in combinations(range(n),d)],axis=1).astype(np.int64)
+    index=np.gcd.reduce(np.abs(minors),axis=1)
+    for i in rest[index%2==0]:
+        span=_saturated_kernel(_saturated_kernel(V[cones[i]]).T)
+        fixed[i]=bool(np.any((mu@span)%2))
+    return fixed
+
+def _newton_data(V: np.ndarray,D: np.ndarray)->tuple[h_polytope.HPolytope,np.ndarray,np.ndarray]:
+    """
+    **Description:**
+    Newton polytope of a toric divisor, its vertices and the vertex-face incidences of the rays.
+    **Arguments:**
+    - `V (np.ndarray)`: The rays, one per row.
+    - `D (np.ndarray)`: Divisor coefficients in the basis of the rays.
+    **Returns:**
+    - `tuple[h_polytope.HPolytope,np.ndarray,np.ndarray]`: (Newton polytope, vertices W, E) with E[i,j] if <W_j,V_i>=-D_i.
+    """
+    NP=Newton_Polytope(V,D)
+    W=np.asarray(NP.vertices(),dtype=int).reshape(-1,V.shape[1])
+    return NP,W,(V@W.T+D[:,None])==0
+
+def chi_hypersurface(V: ArrayLike,cones_by_dim: list[np.ndarray],divisor: ArrayLike)->int:
+    """
+    **Description:**
+    Euler characteristic of the generic hypersurface in the class `divisor` of a complete simplicial toric variety, as the
+    sum of the Kouchnirenko Euler characteristics of its intersections with all torus orbits (Danilov-Khovanskii).
+    **Arguments:**
+    - `V (ArrayLike)`: The rays of the fan, one per row.
+    - `cones_by_dim (list[np.ndarray])`: All cones of the fan of dimension 1,...,dim, as returned by `_cones_by_dimension`.
+    - `divisor (ArrayLike)`: Divisor coefficients in the basis of the rays.
+    **Returns:**
+    - `int`: The Euler characteristic.
+    """
+    V=np.asarray(V,dtype=int)
+    _,W,E=_newton_data(V,np.asarray(divisor,dtype=int))
+    cache={}
+    return int(sum(_orbit_pieces(V,cones,W,E,cache)[0].sum() for cones in [np.zeros((1,0),dtype=int)]+cones_by_dim))
+
+def find_O7_planes(O: CY_orientifold|F_Theory_Uplift)->np.ndarray:
+    """
+    **Description:**
+    Finds the divisorial O7-planes from the orbifold rays alone (no fan): the rays of `vectors_orbifold()` that are odd
+    under `orientifold_mod2_character` (their divisors are pointwise fixed) and whose divisor meets the orientifold B,
+    i.e. at least two monomials of the orientifold line bundle survive on it. Non-divisorial O7-planes (fixed 2-cones
+    whose stratum lies in B) need the fan, see `orientifold_fixed_locus`.
+    **Arguments:**
+    - `O (CY_orientifold|F_Theory_Uplift)`: The Calabi-Yau orientifold or an F-theory uplift.
+    **Raises:**
+    - `ValueError`: Raised if a pointwise fixed divisor is contained in B (B reducible).
+    **Returns:**
+    - `np.ndarray`: Sorted one-indexed labels of `vectors_orbifold()`.
+    """
+    O=O.orientifold() if hasattr(O,"orientifold") else O
+    if O.line_bundle() is None:
+        raise ValueError("The orientifold is not regular (no projected-in monomial), so B and its O7-planes are not defined.")
+    V=np.asarray(O.vectors_orbifold(),dtype=int)
+    _,_,E=_newton_data(V,np.asarray(O.line_bundle(),dtype=int))
+    n_face=E.sum(axis=1)
+    odd=(V@orientifold_mod2_character(O.xi()))%2==1
+    if np.any(odd&(n_face==0)):
+        raise ValueError(f"The fixed divisors {np.flatnonzero(odd&(n_face==0))+1} are contained in B.")
+    return np.flatnonzero(odd&(n_face>=2))+1
+
+def _singular_orbits(V: np.ndarray,V_up: np.ndarray,r: np.ndarray,L: np.ndarray,NP: h_polytope.HPolytope,E: np.ndarray,cones_by_dim: list[np.ndarray])->list[tuple[tuple[int,...],str]]:
+    """
+    **Description:**
+    Finds the torus orbits along which the orientifold-invariant Calabi-Yau X is singular. X is the double cover of B,
+    cut out upstairs by the pull-backs of the sections of B, whose exponent of x_i is r_i times the exponent on B
+    (r_i=2 for mu-odd rays). On an orbit O(tau) that X meets (not exactly one surviving monomial), X is singular if the
+    upstairs cone is not unimodular (X passes through a quotient singularity). If at least two monomials survive, the
+    generic restriction is smooth. If none survives, O(tau) lies in X and X=sum_j x_j f_j+O(x^2) near it, so X is singular
+    exactly at the common zeros on O(tau) of the first-order coefficients f_j, j in tau. Their supports T_j are the lattice
+    points whose upstairs exponents along tau are the unit vector e_j; a generic system has a common zero iff
+    dim(sum_{j in I} T_j)>=|I| for every set I of nonempty supports (Bernstein).
+    **Arguments:**
+    - `V (np.ndarray)`: The orbifold rays, one per row.
+    - `V_up (np.ndarray)`: The corresponding primitive rays of the Calabi-Yau ambient lattice N, one per row.
+    - `r (np.ndarray)`: Ray rescalings (2 for mu-odd rays, else 1).
+    - `L (np.ndarray)`: The orientifold line bundle.
+    - `NP (h_polytope.HPolytope)`: Its Newton polytope.
+    - `E (np.ndarray)`: Vertex-face incidences, see `_newton_data`.
+    - `cones_by_dim (list[np.ndarray])`: All cones of the fan, see `_cones_by_dimension`.
+    **Returns:**
+    - `list[tuple[tuple[int,...],str]]`: The singular orbits as (one-indexed cone, reason).
+    """
+    n=V.shape[1]
+    points=None
+    out=[]
+    for cones in cones_by_dim:
+        d=cones.shape[1]
+        n_vert=E[cones].all(axis=1).sum(axis=1)
+        meets=np.flatnonzero(n_vert!=1)
+        if len(meets)==0:
+            continue
+        M=V_up[cones[meets]].astype(float)
+        minors=np.stack([np.rint(np.abs(np.linalg.det(M[:,:,list(c)]))) for c in combinations(range(n),d)],axis=1).astype(np.int64)
+        for i in meets[np.gcd.reduce(minors,axis=1)!=1]:
+            out.append((tuple(int(x)+1 for x in cones[i]),"quotient singularity"))
+        for i in np.flatnonzero(n_vert==0):
+            c=cones[i]
+            points=np.asarray(NP.points(),dtype=int) if points is None else points
+            exps=r[c][:,None]*(V[c]@points.T+L[c][:,None])
+            first=[points[(exps.sum(axis=0)==1)&(exps[j]==1)] for j in range(d)]
+            first=[T[1:]-T[0] for T in first if len(T)]
+            solvable=all(np.linalg.matrix_rank(np.vstack([first[j] for j in I]).reshape(-1,n))>=len(I) if any(len(first[j]) for j in I) else False for k in range(1,len(first)+1) for I in combinations(range(len(first)),k))
+            if solvable:
+                out.append((tuple(int(x)+1 for x in c),"first-order terms vanish simultaneously"))
+    return out
+
+def orientifold_fixed_locus(O: CY_orientifold|F_Theory_Uplift,check: bool=True,return_chi: bool=False)->dict:
+    """
+    **Description:**
+    Fixed locus of the orientifold involution on the Calabi-Yau X, computed on B=X/sigma in the orbifold toric variety
+    (`vectors_orbifold()`, `line_bundle()`, `orbifold_toric_fan()`). X is the double cover of B for the toric data of `O`,
+    i.e. if the orbifold fan was refined (nef decomposition, A1 blow-ups) the corresponding modification of the original
+    Calabi-Yau.
+    The fixed locus is the disjoint union of the pieces B cap O(tau) over the pointwise fixed cones tau (all maximal cones,
+    all cones with a mu-odd ray, and cones whose rays span an even-index sublattice on whose saturation mu is odd), since a
+    torus element acts freely on all other orbits. On a fixed orbit of dimension k the surviving monomials are the lattice
+    points S of a face of the Newton polytope of B: the piece is O(tau) itself if S is empty, empty if |S|=1, and otherwise
+    a generic hypersurface in (C*)^k with Euler characteristic (-1)^(k-1) Vol_k(S) (Kouchnirenko, normalized in tau^perp).
+    The O7-planes are the closures of the 2-dimensional pieces: mu-odd rays meeting B and fixed 2-cones whose orbit lies in
+    B (non-divisorial O7-planes); the pieces on cones containing one of them add up to chi_O7. All remaining pieces must be
+    points, the O3-planes: lattice lengths on fixed 3-cones and torus-fixed points lying on X.
+    **Arguments:**
+    - `O (CY_orientifold|F_Theory_Uplift)`: The Calabi-Yau orientifold or an F-theory uplift.
+    - `check (bool)`: Whether to verify that X is smooth (see `_singular_orbits`) and that the O7-planes are disjoint, as
+      the O-plane interpretation requires. Defaults to `True`.
+    - `return_chi (bool)`: Whether to also compute chi(B) and chi(X)=2chi(B)-chi_I by orbit sums over all cones, and to
+      verify the Lefschetz congruence chi_I = chi(X) mod 4. Defaults to `False`.
+    **Raises:**
+    - `ValueError`: Raised if the fixed locus contains a curve or a fixed divisor inside B, or (with `check`) if X is
+      singular, or (with `return_chi`) if the Lefschetz congruence fails.
+    **Returns:**
+    - `dict`: `O7_rays` (one-indexed labels of `vectors_orbifold()`), `O7_two_cones` (non-divisorial O7-planes),
+      `chi_O7_components` (O7-plane -> Euler characteristic), `O3_cones` (cone -> number of O3-planes on its orbit),
+      `chi_O7`, `n_O3`, `chi_I` and, with `return_chi`, `chi_B` and `chi_X`.
+    """
+    O=O.orientifold() if hasattr(O,"orientifold") else O
+    if O.line_bundle() is None:
+        raise ValueError("The orientifold is not regular (no projected-in monomial), so B and its fixed locus are not defined.")
+    V=np.asarray(O.vectors_orbifold(),dtype=int)
+    if V.shape[1]!=4:
+        raise ValueError("The fixed locus is only implemented for Calabi-Yau threefolds (four-dimensional ambient space).")
+    L=np.asarray(O.line_bundle(),dtype=int)
+    NP,W,E=_newton_data(V,L)
+    mu=orientifold_mod2_character(O.xi())
+    odd=(V@mu)%2==1
+    r=1+odd.astype(int)
+    cones_by_dim=_cones_by_dimension(O.orbifold_toric_fan())
+    if check:
+        Lam=lattice_refinement(np.asarray(O.xi(),dtype=int))
+        V_up=np.rint(np.linalg.solve(Lam,(r[:,None]*V).T).T).astype(int)
+        singular=_singular_orbits(V,V_up,r,L,NP,E,cones_by_dim)
+        if singular:
+            raise ValueError(f"The orientifold-invariant Calabi-Yau is singular along the orbits of {singular[:5]}{' ...' if len(singular)>5 else ''}.")
+    cache={}
+    fixed_pieces=[]
+    for cones in cones_by_dim:
+        fixed=cones[_fixed_cones(V,cones,mu,odd)]
+        fixed_pieces.append((fixed,)+_orbit_pieces(V,fixed,W,E,cache))
+    rays,_,dim,n_vert=fixed_pieces[0]
+    if np.any(n_vert==0):
+        raise ValueError(f"The fixed divisors {rays[n_vert==0,0]+1} are contained in B.")
+    two,_,_,n_vert2=fixed_pieces[1]
+    seed_rays=rays[dim==2,0]
+    seeds=[(int(i),) for i in seed_rays]+[tuple(int(x) for x in c) for c in two[(n_vert2==0)&~np.isin(two,seed_rays).any(axis=1)]]
+    chi_O7={s:0 for s in seeds}
+    o3={}
+    for cones,chi,dim,n_vert in fixed_pieces:
+        owners=np.stack([np.isin(cones,s).sum(axis=1)==len(s) for s in seeds],axis=1) if seeds else np.zeros((len(cones),0),dtype=bool)
+        for i in np.flatnonzero(dim>=0):
+            label=tuple(int(x)+1 for x in cones[i])
+            own=np.flatnonzero(owners[i])
+            if len(own):
+                if check and len(own)>1:
+                    raise ValueError(f"The O7-planes {[tuple(x+1 for x in seeds[j]) for j in own]} meet on the orbit of cone {label}.")
+                chi_O7[seeds[own[0]]]+=int(chi[i])
+            elif dim[i]>0:
+                raise ValueError(f"The fixed locus contains a {dim[i]}-dimensional piece on the orbit of cone {label} that is not part of an O7-plane.")
+            elif chi[i]:
+                o3[label]=int(chi[i])
+    out={"O7_rays":np.array(sorted(s[0]+1 for s in seeds if len(s)==1),dtype=int),
+         "O7_two_cones":sorted(tuple(x+1 for x in s) for s in seeds if len(s)==2),
+         "chi_O7_components":{tuple(x+1 for x in s):v for s,v in chi_O7.items()},
+         "O3_cones":o3,"chi_O7":int(sum(chi_O7.values())),"n_O3":int(sum(o3.values()))}
+    out["chi_I"]=out["chi_O7"]+out["n_O3"]
+    if return_chi:
+        chi_B=int(sum(_orbit_pieces(V,cones,W,E,cache)[0].sum() for cones in [np.zeros((1,0),dtype=int)]+cones_by_dim))
+        chi_X=2*chi_B-out["chi_I"]
+        if chi_X%2 or (out["chi_I"]-chi_X)%4:
+            raise ValueError(f"chi(X)={chi_X} and chi_I={out['chi_I']} violate the Lefschetz congruence chi_I = chi(X) = 0 mod 2, chi_I = chi(X) mod 4.")
+        out["chi_B"]=chi_B
+        out["chi_X"]=chi_X
+    return out
+
+def _fixed_locus(O: CY_orientifold|F_Theory_Uplift,return_chi: bool=False)->dict:
+    """
+    **Description:**
+    Cached `orientifold_fixed_locus` of a Calabi-Yau orientifold or of the orientifold of an F-theory uplift.
+    **Arguments:**
+    - `O (CY_orientifold|F_Theory_Uplift)`: The Calabi-Yau orientifold or F-theory uplift.
+    - `return_chi (bool)`: Whether chi(B) and chi(X) are needed. Defaults to `False`.
+    **Returns:**
+    - `dict`: The output of `orientifold_fixed_locus`.
+    """
+    O=O.orientifold() if hasattr(O,"orientifold") else O
+    return O.fixed_locus(return_chi=return_chi) if hasattr(O,"fixed_locus") else orientifold_fixed_locus(O,return_chi=return_chi)
+
+def chi_I(O: CY_orientifold|F_Theory_Uplift)->int:
+    """
+    **Description:**
+    Euler characteristic of the fixed locus of the orientifold involution, chi_O7 plus the number of O3-planes
+    (see `orientifold_fixed_locus`).
+    **Arguments:**
+    - `O (CY_orientifold|F_Theory_Uplift)`: The Calabi-Yau orientifold or F-theory uplift.
     **Returns:**
     - `int`: The Euler characteristic of the fixed locus.
     """
-    return chi_O7(O)+chi_O3_uplift(O)
+    return _fixed_locus(O)["chi_I"]
 
 def chi_O7(O: CY_orientifold|F_Theory_Uplift)->int:
     """
     **Description:**
-    Computes the total Euler characteristic of the O7-planes, summing chi(D∩X)=D^3+c_2(X)D over the O7-plane divisors
-    `D` found by `find_O7_planes`. With X the anticanonical hypersurface, c(D∩X)=prod(1+D_i)/((1+X)(1+D)), so
-    chi(D∩X)=int_V X D (e_2(D_1,...,D_N)+D^2), which is evaluated for all O7-planes in one torus localization.
+    Total Euler characteristic of the O7-planes, divisorial and non-divisorial (see `orientifold_fixed_locus`).
     **Arguments:**
-    - `O (CY_orientifold|F_Theory_Uplift)`: The Calabi-Yau orientifold or F-theory uplift (any object providing `CY_ambient_toric_fan()` and `xi()`).
+    - `O (CY_orientifold|F_Theory_Uplift)`: The Calabi-Yau orientifold or F-theory uplift.
     **Returns:**
     - `int`: The Euler characteristic of the O7-planes.
     """
-    fan=O.CY_ambient_toric_fan()
-    o7=np.zeros(len(fan.vectors()),dtype=bool)
-    o7[find_O7_planes(O)-1]=True
-    if not o7.any():
-        return 0
-    cones,w,den=localization_weights(fan)
-    lX=w.sum(axis=1)
-    e2=(lX**2-(w**2).sum(axis=1))/2
-    wD=np.where(o7[cones],w,0.0)
-    return round(np.sum((e2[:,None]+wD**2)*wD*(lX/den)[:,None]))
+    return _fixed_locus(O)["chi_O7"]
 
-def chi_O3(fan: Fan,fixed_cones: Iterable[tuple[int,...]])->float:
+def chi_O3(O: CY_orientifold|F_Theory_Uplift)->int:
     """
     **Description:**
-    Computes the number of O3-planes (Euler characteristic of the pointlike fixed locus) by summing, for each fixed cone `c`, the intersection numbers of the stratum of `c` with all toric divisors of the fan.
+    Number of O3-planes, i.e. the Euler characteristic of the pointlike part of the fixed locus, including O3-planes at
+    torus-fixed points of the ambient space (see `orientifold_fixed_locus`).
     **Arguments:**
-    - `fan (Fan)`: The toric fan.
-    - `fixed_cones (Iterable[tuple[int,...]])`: Fixed cones, as tuples of one-indexed ray labels.
-    **Returns:**
-    - `float`: The O3-plane contribution to the Euler characteristic of the fixed locus.
-    """
-    chi=0
-    IN=fan.intersection_numbers()
-    for c in fixed_cones:
-        for d in range(1,len(fan.vectors())+1):
-            t=tuple(sorted(c+(d,)))
-            chi+=IN.get(t,0)
-    return chi
-
-def chi_O3_uplift(O: CY_orientifold)->int:
-    """
-    **Description:**
-    Computes the O3-plane contribution to the Euler characteristic of the fixed locus, i.e. the number of O3-planes,
-    by `three_cone_intersections` on the fixed cones of codimension one less than the dimension of `O`
-    (`Z2_fixed_locus` with `cone_dimension=O.dim()-1`) of the Calabi-Yau ambient toric fan.
-    **Arguments:**
-    - `O (CY_orientifold)`: The Calabi-Yau orientifold.
-    **Raises:**
-    - `ValueError`: Raised by `three_cone_intersections` if a fixed 3-cone is contained in the Calabi-Yau.
+    - `O (CY_orientifold|F_Theory_Uplift)`: The Calabi-Yau orientifold or F-theory uplift.
     **Returns:**
     - `int`: The number of O3-planes.
     """
-    fan=O.CY_ambient_toric_fan()
-    return three_cone_intersections(O.polytope().dual(),fan,Z2_fixed_locus(fan,O.xi(),O.dim()-1))
+    return _fixed_locus(O)["n_O3"]
+
+def general_divisor_intersection(fan: Fan,divisors: Sequence[ArrayLike])->float:
+    """
+    **Description:**
+    Computes the intersection number D_1*...*D_n of n=`fan.dim` divisors in the toric variety of `fan`.
+    **Arguments:**
+    - `fan (Fan)`: The toric fan; must be a triangulation.
+    - `divisors (Sequence[ArrayLike])`: `fan.dim` divisors, each a coefficient vector over the prime toric divisors, ordered as `fan.labels`.
+    **Returns:**
+    - `float`: The intersection number of the divisors.
+    """
+    if len(divisors)!=fan.dim:
+        raise ValueError(f"Need {fan.dim} divisors, got {len(divisors)}.")
+    divisors=np.asarray(divisors)
+    if divisors.shape[1]!=len(fan.labels):
+        raise ValueError(f"Divisors need {len(fan.labels)} coefficients, got {divisors.shape[1]}.")
+    label_idx={l:idx for idx,l in enumerate(fan.labels)}
+    supports=[set(np.nonzero(div)[0]) for div in divisors]
+    total=0
+    #keys are sorted label tuples, so sum over all distinct orderings of each key
+    for key,value in fan.intersection_numbers(copy=False).items():
+        if 0 in key:
+            continue
+        idx=tuple(label_idx[l] for l in key)
+        if not all(support.intersection(idx) for support in supports):
+            continue
+        for perm in set(permutations(idx)):
+            total+=value*prod(divisors[a][i] for a,i in enumerate(perm))
+    return total
 
 def intersection_test(fan: Fan,intersection_dict: Mapping[tuple[int,...],float],divisors: Sequence[np.ndarray],target_divisors: Sequence[int]|np.ndarray)->np.ndarray:
     """
@@ -1611,7 +2027,7 @@ def intersection_test(fan: Fan,intersection_dict: Mapping[tuple[int,...],float],
     for i, d in enumerate(target_divisors):
         stari=fan.star((d,))
         stari_set={item for sub_tuple in stari for item in sub_tuple}
-        simps=get_lower_dimensional_cones(stari,3)
+        simps=get_lower_dimensional_cones(stari,fan.dim-codim_cicy-1)
         valid_intersections=[]
         for div_set in divisor_nonvanishing_sets:
             valid_intersections.append(div_set.intersection(stari_set))
@@ -1621,7 +2037,7 @@ def intersection_test(fan: Fan,intersection_dict: Mapping[tuple[int,...],float],
                 key=tuple(sorted(s+ts+(d,)))
                 coefficient=np.prod([divisors[a][ray-1]for a,ray in enumerate(ts)])
                 total_intersection+=coefficient*intersection_dict.get(key,0)
-            if total_intersection!=0:
+            if abs(total_intersection)>1e-8:
                 curves_homology_in_basis[i]=True
                 break
     return curves_homology_in_basis
@@ -1640,17 +2056,7 @@ def intersection_test_uplift(F: F_Theory_Uplift,target_divisors: Sequence[int]|n
     xlab=len(F.vectors_singular_uplift_ambient())-3
     LBW[xlab]=3
     return intersection_test(F.smooth_uplift_ambient_toric_fan(),F.intersection_numbers_smooth_uplift_ambient(),[F.line_bundle_base_N(),LBW],target_divisors)
-
-def find_O7_planes(O: CY_orientifold|F_Theory_Uplift)->np.ndarray:
-    """
-    **Description:**
-    Finds the toric divisors of the Calabi-Yau ambient variety that are pointwise fixed by the orientifold involution, i.e. the O7-plane loci (one-dimensional fixed cones of `Z2_fixed_locus`).
-    **Arguments:**
-    - `O (CY_orientifold|F_Theory_Uplift)`: The Calabi-Yau orientifold, or an F-theory uplift (both provide `CY_ambient_toric_fan()` and `xi()`).
-    **Returns:**
-    - `np.ndarray`: Sorted array of the unique one-indexed ray labels of the O7-plane divisors.
-    """
-    return np.unique([t[0] for t in Z2_fixed_locus(O.CY_ambient_toric_fan(),O.xi(),1)]).astype(int)
+#Should be obsolete as we have the Z2 fixed locus
 
 # ---- Obsolete: superseded by hodge_diamond_stringy / hodge_diamond_cy4 / F_Theory_Uplift.hodge_numbers_CY (kept as comments for reference) ----
 # def _vertex_key(vertices: ArrayLike)->tuple[tuple[int,...],...]:
@@ -4309,56 +4715,17 @@ def is_partition(points: ArrayLike,divisors: ArrayLike,atol: float=1e-8)->tuple[
     shifts[-1]=total_shift
     return False, True, shifts
 
-def three_cone_intersections(dual_poly: Polytope,fan: Fan,cones: Iterable[Sequence[int]]|None=None)->int:
-    """
-    **Description:**
-    Counts the O3-planes from the given 3-cones: for every 3-cone whose dual face of `dual_poly` is an edge, the lattice length of that edge (its intersection points with the Calabi-Yau), plus the number of distinct maximal cones containing one of the 3-cones whose additional ray v satisfies <w,v> != -1 for every vertex w of that dual face (endpoint O3-planes).
-    **Arguments:**
-    - `dual_poly (Polytope)`: The polytope dual to the fan polytope (the M-lattice polytope of the Calabi-Yau).
-    - `fan (Fan)`: The toric fan of the ambient variety.
-    - `cones (Iterable[Sequence[int]]|None)`: The 3-cones (tuples of one-indexed ray labels) to consider, e.g. the fixed 3-cones from `Z2_fixed_locus`. If `None`, all 3-cones of `fan` are used. Defaults to `None`.
-    **Raises:**
-    - `ValueError`: Raised if a 3-cone has no dual face vertices, i.e. it is contained in the Calabi-Yau and not an isolated O3 intersection.
-    **Returns:**
-    - `int`: The number of O3-planes.
-    """
-    verts=dual_poly.vertices()
-    max_cones=[tuple(sorted(c)) for c in fan.cones()]
-    if cones is None:
-        cones=get_lower_dimensional_cones(max_cones,3)
-    cones=[tuple(sorted(c)) for c in cones]
-    adjacent=defaultdict(list)
-    for mc in max_cones:
-        for c in combinations(mc,3):
-            adjacent[tuple(sorted(c))].append(mc)
-    tot_intersection=0
-    endpoint_O3s=set()
-    for c in cones:
-        rays=fan.vectors(c)
-        face_verts=verts[np.all(verts@rays.T==-1,axis=1)]
-        if len(face_verts)==2:
-            tot_intersection+=int(np.gcd.reduce(np.abs(face_verts[1]-face_verts[0])))
-        elif len(face_verts)==0:
-            raise ValueError(f"3-cone {c} is contained in the CY; " "this is not an isolated O3 intersection.")
-        for mc in adjacent[c]:
-            extra=[r for r in mc if r not in c]
-            v=fan.vectors(extra)[0]
-            survives=np.any(face_verts@v==-1)
-            if not survives:
-                endpoint_O3s.add(mc)
-    return tot_intersection+len(endpoint_O3s)
-
 def chi_fourfold_uplift(F: F_Theory_Uplift)->int:
     """
     **Description:**
-    Euler characteristic of the Calabi-Yau fourfold of an F-theory uplift: the toric localization `cicy4_chern_toric_uplift(F,4)` plus 6 times the number of O3-planes from `three_cone_intersections`.
+    Euler characteristic of the Calabi-Yau fourfold of an F-theory uplift: the toric localization `cicy4_chern_toric_uplift(F,4)` plus 6 times the number of O3-planes `chi_O3`.
     **Arguments:**
     - `F (F_Theory_Uplift)`: The F-theory uplift.
     **Returns:**
     - `int`: The Euler characteristic.
     """
-    chi_loc=cicy4_chern_toric_uplift(F,4)
-    n_O3=three_cone_intersections(F.polytope().dual(),F.CY_ambient_toric_fan(),Z2_fixed_locus(F.CY_ambient_toric_fan(),F.xi(),3))
+    chi_loc=toric_chern_class_uplift(F,4)
+    n_O3=chi_O3(F)
     return chi_loc+n_O3*6
 
 def toric_chern_class_uplift(F: F_Theory_Uplift,n: int)->int|dict[tuple[int,...],int]|dict[int,int]:
@@ -4411,6 +4778,61 @@ def intersecting_points(points: np.ndarray,divisors: Sequence[np.ndarray]|None=N
         return out
     else:
         return points[out]
+
+def intersecting_cones(fan: Fan,cones: Iterable[Iterable[int]]|None=None,divisors: Sequence[np.ndarray]|None=None,polytopes: Sequence[Polytope|h_polytope.HPolytope]|None=None,closure: bool=True,return_not_intersecting: bool=False,cone_dim: int|None=None)->list[tuple[int,...]]:
+    """
+    **Description:**
+    Determines which cones of the fan intersect the generic complete intersection X={f_1=...=f_k=0} defined by the divisors/Newton polytopes. This generalizes `intersecting_points` from rays to arbitrary cones.
+    On the torus orbit O(σ) (all x_ρ=0 for ρ in σ, all other coordinates nonzero) only the monomials of f_i with vanishing exponent along every ray of σ survive, i.e. the face F_i(σ) of the i-th Newton polytope. A generic system with these Newton polytopes has a solution on the orbit torus iff dim(Σ_{i∈I} F_i(σ)) >= |I| for every subset I of the nonempty faces (Bernstein); empty faces mean f_i vanishes identically on O(σ) and impose no condition. For a hypersurface this reduces to: O(σ) meets X iff F(σ) does not consist of a single monomial.
+    The closure V(σ) is the union of the orbits O(τ) for cones τ ⊇ σ of the fan, so with `closure=True` the cone counts as intersecting if any such orbit meets X. For nef divisors this agrees with the orbit test. If σ is not a cone of the fan, its orbit is empty and with `closure=True` the test answers whether the intersection of the toric divisors D_ρ, ρ in σ, meets X.
+    **Arguments:**
+    - `fan (Fan)`: The toric fan of the ambient variety.
+    - `cones (Iterable[Iterable[int]]|None)`: The cones to test, as tuples of one-indexed ray labels of `fan`. If `None`, all cones of `fan` of dimension >= 1 are tested. Defaults to `None`.
+    - `divisors (Sequence[np.ndarray]|None)`: Coefficient vectors of the divisors in the basis of `fan.vectors()`. If `None`, they are computed from `polytopes`. Defaults to `None`.
+    - `polytopes (Sequence[Polytope|h_polytope.HPolytope]|None)`: The Newton polytopes of the divisors. If `None`, they are computed from `divisors`. Defaults to `None`.
+    - `closure (bool)`: Whether to test the orbit closure V(σ) instead of the orbit O(σ). Defaults to `True`.
+    - `return_not_intersecting (bool)`: Whether to return the non-intersecting cones instead. Defaults to `False`.
+    **Raises:**
+    - `ValueError`: Raised if neither `divisors` nor `polytopes` is given.
+    **Returns:**
+    - `list[tuple[int,...]]`: The (non-)intersecting cones, as tuples of one-indexed ray labels.
+    """
+    V=np.asarray(fan.vectors())
+    if divisors is None:
+        if polytopes is None:
+            raise ValueError("At least divisors or polytopes must be defined")
+        divisors=[linebundle_weights_from_Newton_Polytope(V,p) for p in polytopes]
+    elif polytopes is None:
+        polytopes=[Newton_Polytope(V,d) for d in divisors]
+    secs=[np.asarray(sections(V,d,p)).reshape(len(V),-1) for d,p in zip(divisors,polytopes)]
+    row={l:i for i,l in enumerate(fan.used_labels)}
+    fan_cones={frozenset(c) for d in range(1,np.linalg.matrix_rank(V)+1) for c in fan.cones(dim=d)}
+    if cones is None:
+        if cone_dim is None:
+            cones=sorted((tuple(sorted(c)) for c in fan_cones),key=lambda c:(len(c),c))
+        else:
+            cones=get_lower_dimensional_cones(fan_cones,cone_dim)
+
+    @cache
+    def orbit_meets(c: frozenset[int])->bool:
+        if c not in fan_cones:
+            return False
+        r=[row[l] for l in c]
+        faces=[S[:,np.all(S[r]==0,axis=0)] for S in secs]
+        diffs=[F[:,1:]-F[:,:1] for F in faces if F.shape[1]>0]
+        for k in range(1,len(diffs)+1):
+            for I in combinations(diffs,k):
+                M=np.hstack(I)
+                if (np.linalg.matrix_rank(M) if M.size else 0)<k:
+                    return False
+        return True
+    out=[]
+    for c in cones:
+        s=frozenset(c)
+        meets=orbit_meets(s) or (closure and any(orbit_meets(t) for t in fan_cones if t>s))
+        if meets!=return_not_intersecting:
+            out.append(tuple(c))
+    return out
 # def intersecting_points(pts,polytopes):
 #     """
 #     Lattice points pts whose toric divisors intersect
@@ -4486,6 +4908,7 @@ def tensor_symm_in_basis(tensor: Mapping[int,Any]|Mapping[tuple[int,...],Any],ba
     **Returns:**
     - `dict[int,Any]|dict[tuple[int,...],Any]`: The tensor in the new basis, keyed by one-indexed basis positions (rank 1) or sorted tuples of them.
     """
+    basis=np.asarray(basis)
     if np.ndim(basis)!=1 or (Q is not None and np.ndim(Q)!=2):
         raise ValueError(f"Expected a 1D `basis` and a 2D `Q`, got shapes {np.shape(basis)} and {np.shape(Q)}; note the argument order (tensor,basis,Q).")
     if not tensor:
@@ -4496,12 +4919,12 @@ def tensor_symm_in_basis(tensor: Mapping[int,Any]|Mapping[tuple[int,...],Any],ba
             in_prime_basis=all(i<=h for i in tensor)
         else:
             in_prime_basis=all(i<=h for key in tensor for i in key)
-    out=dict(tensor) if in_prime_basis else tensor_symm_in_prime_basis(tensor,basis)
+    out=dict(tensor) if in_prime_basis else _tensor_symm_in_prime_basis(tensor,basis)
     if Q is not None:
-        out=tensor_symm_in_glsm_basis(out,Q,basis,tol=tol)
+        out=_tensor_symm_in_glsm_basis(out,Q,basis,tol=tol)
     return out
 
-def tensor_symm_in_prime_basis(tensor: Mapping[int,Any]|Mapping[tuple[int,...],Any],basis: ArrayLike)->dict[int,Any]|dict[tuple[int,...],Any]:
+def _tensor_symm_in_prime_basis(tensor: Mapping[int,Any]|Mapping[tuple[int,...],Any],basis: ArrayLike)->dict[int,Any]|dict[tuple[int,...],Any]:
     """
     **Description:**
     Transforms a symmetric tensor of all prime torics into the basis of a subset of prime torics.
@@ -4567,7 +4990,6 @@ def _sorted_index_tuples(h: int,rank: int)->np.ndarray:
         new_col=np.repeat(last,counts)+np.arange(counts.sum())-np.repeat(starts,counts)
         idx=np.column_stack([np.repeat(idx,counts,axis=0),new_col])
     return idx
-
 # def tensor_symm_in_glsm_basis(tensor: Mapping[int,int|float]|Mapping[tuple[int,...],int|float],Q: ArrayLike,basis: ArrayLike,tol: float=1e-5,block_bytes: int=2**27)->dict[int,int|float]|dict[tuple[int,...],int|float]:
 #     """
 #     **Description:**
@@ -4749,7 +5171,7 @@ def toric_chern_class(fan: Fan,divisors: ArrayLike,n: int)->int|dict[tuple[int,.
     if rank==1:
         result={key[0]: value for key,value in result.items()}
     return result
-
+    
 # def cicy4_toric_chern_class(fan: Fan,divisors: ArrayLike,n: int)->int|dict[tuple[int,...],int]|dict[int,int]:
 #     """
 #     **Description:**
@@ -4774,7 +5196,7 @@ def toric_chern_class(fan: Fan,divisors: ArrayLike,n: int)->int|dict[tuple[int,.
 #         raise ValueError("Ambient toric variety must be 6-dimensional.")
 #     return toric_chern_class(fan,divisors,n)
 
-def cy_intersection_numbers(fan: Fan,divisors: Sequence[ArrayLike],basis: ArrayLike|None=None,Q: ArrayLike|None=None,in_basis: bool=False,tol: float|None=1e-5,decimals: int=10)->dict[tuple[int,...],int|float]:
+def cy_intersection_numbers(fan: Fan,divisors: Sequence[ArrayLike]|None=None,basis: ArrayLike|None=None,Q: ArrayLike|None=None,in_basis: bool=False,tol: float|None=1e-5,decimals: int=10)->dict[tuple[int,...],int|float]:
     """
     **Description:**
     Intersection numbers of the complete intersection of `divisors` in the toric variety of `fan`, in terms of all prime toric divisors, of a prime toric basis, or of a GLSM basis (see `cy_intersection_numbers_all_prime_torics` and `tensor_symm_in_basis`).
@@ -4789,15 +5211,17 @@ def cy_intersection_numbers(fan: Fan,divisors: Sequence[ArrayLike],basis: ArrayL
     **Returns:**
     - `dict[tuple[int,...],int|float]`: The intersection numbers keyed by sorted one-indexed label tuples (prime torics, basis positions or GLSM indices); absent keys are zero.
     """
-    out=cy_intersection_numbers_all_prime_torics(fan,divisors,tol=tol,decimals=decimals)
+    if divisors is None:
+        divisors=[np.ones(len(fan.vectors(),dtype=int))]
+    out=_cy_intersection_numbers_all_prime_torics(fan,divisors,tol=tol,decimals=decimals)
     if in_basis or Q is not None:
         if basis is None:
             basis=basis_H2_toric_fan(fan)
     if basis is not None:
-        return tensor_symm_in_basis(out,basis,Q)
+        return tensor_symm_in_basis(out,basis,Q,in_prime_basis=False)
     return out
 
-def cy_intersection_numbers_all_prime_torics(fan: Fan,divisors: Sequence[ArrayLike],tol: float|None=1e-5,decimals: int=10)->dict[tuple[int,...],float]:
+def _cy_intersection_numbers_all_prime_torics(fan: Fan,divisors: Sequence[ArrayLike]|None=None,tol: float|None=1e-5,decimals: int=10)->dict[tuple[int,...],float]:
     """
     **Description:**
     Intersection numbers of the complete intersection X = D^(1) ∩ ... ∩ D^(r)
@@ -4812,6 +5236,8 @@ def cy_intersection_numbers_all_prime_torics(fan: Fan,divisors: Sequence[ArrayLi
     **Returns:**
     - `dict[tuple[int,...],float]`: {sorted tuple of labels in 1,...,N: value}; absent keys are zero.
     """
+    if divisors is None:
+        divisors=[np.ones(len(fan.vectors()),dtype=int)]
     K=fan.intersection_numbers()
     keys=np.array(list(K),dtype=np.int64)
     vals=np.fromiter(K.values(),dtype=float,count=len(K))
@@ -4858,18 +5284,6 @@ def KC_ext(vc: VectorConfiguration,Q: ArrayLike)->Cone:
         KC_rays.append(KC.rays())
     return Cone(np.unique(np.vstack(KC_rays),axis=0))
 
-def MC_ext(vc: VectorConfiguration,Q: ArrayLike)->Cone:
-    """
-    **Description:**
-    Dual of the extended Kahler cone `KC_ext(vc,Q)`, i.e. the intersection of the Mori cones of all fine phases.
-    **Arguments:**
-    - `vc (VectorConfiguration)`: The vector configuration whose secondary fan is used.
-    - `Q (ArrayLike)`: GLSM charge matrix whose rows define the basis.
-    **Returns:**
-    - `Cone`: The dual of the extended Kahler cone.
-    """
-    return KC_ext(vc,Q).dual()
-
 def divisor_in_zero_one_rep_numpy(points: ArrayLike,a: ArrayLike,atol: float=1e-8)->tuple[np.ndarray,np.ndarray]|tuple[None,None]:
     """
     **Description:**
@@ -4896,7 +5310,6 @@ def divisor_in_zero_one_rep_numpy(points: ArrayLike,a: ArrayLike,atol: float=1e-
     ok=np.all(np.abs(M-Mi)<atol,axis=1)&np.all((b==0)|(b==1),axis=1)
     i=np.flatnonzero(ok)
     return (b[i[0]],Mi[i[0]]) if len(i) else (None,None)
-from scipy.linalg import qr
 
 def divisor_in_zero_one_rep(rays: ArrayLike,a: ArrayLike)->tuple[np.ndarray,np.ndarray]|tuple[None,None]:
     """
@@ -4974,23 +5387,37 @@ def kernel_hnf_N(V,cols):
     KN=-(K@Gam); assert not (KN%D).any()
     H=np.zeros((len(P),len(V)),int); H[:,cols[P]]=K; H[:,cols[N]]=KN//D
     return H,cols[P]
+# def adapted_glsm(V,bulk,u=np.array([0,0,0,0,1,0])):
+#     """GLSM of V adapted to the fibration with height V@u; bulk = count of leading bulk points or index array.
+#     Rows: [bulk | D7 | fiber-only | tau]; bulk and fiber-only rows are supported on height-zero columns only."""
+#     V=np.asarray(V); h=V@u; n=len(V); B=np.arange(bulk) if np.isscalar(bulk) else np.asarray(bulk)
+#     N,S=np.flatnonzero(h>0),np.flatnonzero(h<0); tie=lambda i:(V[i,:-2].any(),V[i,-1])
+#     p=min(N[h[N]==h[N].min()],key=tie); b0=min(S[h[S]==h[S].max()],key=tie)
+#     S=np.r_[N[N!=p],S[S!=b0],b0]; Fl=np.setdiff1d(np.flatnonzero(h==0),B)
+#     H,pv=kernel_hnf_N(V,[p,*S,*B,*Fl])
+#     Hnb,pvn=kernel_hnf_N(V,[p,*S,*Fl])
+#     tau_free=Hnb[0,p]==H[0,p]; tau=Hnb[0] if tau_free else H[0]
+#     D7,D7nb=H[np.isin(pv,S)],Hnb[np.isin(pvn,S)]
+#     bulkrows,Fo=H[np.isin(pv,B)],H[np.isin(pv,Fl)]
+#     Q=np.vstack([bulkrows,D7,Fo,tau])
+#     return Q
 
-def adapted_glsm(V,bulk,u=np.array([0,0,0,0,1,0])):
-    """GLSM of V adapted to the fibration with height V@u; bulk = count of leading bulk points or index array.
-    Rows: [bulk | D7 | fiber-only | tau]; bulk and fiber-only rows are supported on height-zero columns only."""
-    V=np.asarray(V); h=V@u; n=len(V); B=np.arange(bulk) if np.isscalar(bulk) else np.asarray(bulk)
+def adapted_glsm(V,bulk,u=np.array([0,0,0,0,1,0]),return_rows=False):
+    """... Rows: [bulk | fiber-only | D7 | tau] ... return_rows=True also returns {'bulk','fiber','d7','tau'} (0-based)."""
+    V=np.asarray(V); h=V@u; B=np.arange(bulk) if np.isscalar(bulk) else np.asarray(bulk)
     N,S=np.flatnonzero(h>0),np.flatnonzero(h<0); tie=lambda i:(V[i,:-2].any(),V[i,-1])
     p=min(N[h[N]==h[N].min()],key=tie); b0=min(S[h[S]==h[S].max()],key=tie)
     S=np.r_[N[N!=p],S[S!=b0],b0]; Fl=np.setdiff1d(np.flatnonzero(h==0),B)
     H,pv=kernel_hnf_N(V,[p,*S,*B,*Fl])
-    Hnb,pvn=kernel_hnf_N(V,[p,*S,*Fl])
-    tau_free=Hnb[0,p]==H[0,p]; tau=Hnb[0] if tau_free else H[0]
-    D7,D7nb=H[np.isin(pv,S)],Hnb[np.isin(pvn,S)]
-    bulkrows,Fo=H[np.isin(pv,B)],H[np.isin(pv,Fl)]
-    Q=np.vstack([bulkrows,D7,Fo,tau])
-    return Q
+    Hnb,_=kernel_hnf_N(V,[p,*S,*Fl])
+    tau=Hnb[0] if Hnb[0,p]==H[0,p] else H[0]
+    blocks=[H[np.isin(pv,B)],H[np.isin(pv,Fl)],H[np.isin(pv,S)]]
+    Q=np.vstack(blocks+[tau])
+    if not return_rows: return Q
+    c=np.cumsum([0]+[len(b) for b in blocks])
+    return Q,{"bulk":np.arange(c[0],c[1]),"fiber":np.arange(c[1],c[2]),"d7":np.arange(c[2],c[3]),"tau":len(Q)-1}
 
-def adapted_glsm_uplift(F: F_Theory_Uplift)->np.ndarray:
+def adapted_glsm_uplift(F,return_rows=False):
     """
     **Description:**
     Applies `adapted_glsm` to an F-theory uplift, using its intersecting M-lattice divisors (in the adapted toric fan ordering) and the number of intersecting base divisors as the bulk size.
@@ -5001,7 +5428,8 @@ def adapted_glsm_uplift(F: F_Theory_Uplift)->np.ndarray:
     """
     V=F.vectors_M_conv_toric_fan()
     n_bulk=len(F.intersecting_divisors_B_M(as_labels=True))+len(F.vertices_B_not_intersecting())
-    return adapted_glsm(V,n_bulk)
+    return adapted_glsm(V,n_bulk,return_rows=return_rows)
+
 _PERMS4=np.array(list(permutations(range(4))))
 
 def _dense_quartic(IN,N)->np.ndarray:
@@ -5299,13 +5727,18 @@ def symmetric_glsm_uplift(F: F_Theory_Uplift,tol: float=1e-6)->dict[str,Any]:
     **Returns:**
     - `dict[str,Any]`: The output of `symmetric_d7_basis`, with the additional key `d7_rows`.
     """
-    Q=adapted_glsm_uplift(F)
-    V=F.intersecting_divisors_M(toric_fan_adapted=True)
-    n_d7=int(np.sum(V@np.array([0,0,0,0,1,0])<0))-1
-    d7=np.arange(len(Q)-1-n_d7,len(Q)-1)
-    IN=tensor_symm_in_glsm_basis(F.intersection_numbers_M(),Q,F.basis_homology_M())
+    Q,rows=adapted_glsm_uplift(F,return_rows=True)
+    d7=rows["d7"]
+    IN=_tensor_symm_in_glsm_basis(F.intersection_numbers_M(),Q,F.basis_homology_M())
     res=symmetric_d7_basis(Q,IN,d7,tol=tol)
     return (res["Q"],res["intersection_numbers"],res["index"])
+    # Q=adapted_glsm_uplift(F)
+    # V=F.vectors_M_conv_toric_fan()
+    # n_d7=int(np.sum(V@np.array([0,0,0,0,1,0])<0))-1
+    # d7=np.arange(len(Q)-1-n_d7,len(Q)-1)
+    # IN=_tensor_symm_in_glsm_basis(F.intersection_numbers_M(),Q,F.basis_homology_M())
+    # res=symmetric_d7_basis(Q,IN,d7,tol=tol)
+    # return (res["Q"],res["intersection_numbers"],res["index"])
 
 def gram_matrix(IN_in_basis: Mapping[tuple[int,...],int|float])->tuple[np.ndarray,dict[tuple[int,int],int],dict[int,tuple[int,int]]]:
     """
@@ -5340,290 +5773,123 @@ def gram_matrix(IN_in_basis: Mapping[tuple[int,...],int|float])->tuple[np.ndarra
         kappa_mat=rounded.astype(int)
     return kappa_mat, k_dict, inv_dict
 
-def intersection_form_H22_vertical_from_gram_matrix(M: ArrayLike)->tuple[np.ndarray,np.ndarray]:
+def _unimodular_column_subset(P: fmpz_mat,max_nodes: int=10**3)->list[int]|None:
     """
     **Description:**
-    Z-basis of the vertical cycles spanned by the N products and the intersection form on it, from the Hermite normal form of the Gram matrix.
+    Searches a subset of the columns of P that is a Z-basis of Z^r.
+    First, starting from the lexicographically first Q-basis among the columns, single columns are exchanged as long as
+    this decreases |det|: exchanging the b-th basis column for column j multiplies the determinant by the b-th
+    coordinate of column j in the current basis. If this gets stuck at |det|>1, a depth-first search follows. A set of
+    columns extends to a Z-basis iff it spans a saturated sublattice. This is tracked by unimodular row operations moving
+    the k chosen columns to e_1,...,e_k: column j can then be added iff its last r-k entries are coprime. The last r-k
+    rows are LLL-reduced and the sparsest columns are tried first. Branches whose remaining columns no longer span the
+    last r-k coordinates are pruned, and columns whose branch has been searched are excluded from their siblings.
+    **Arguments:**
+    - `P (fmpz_mat)`: (r,N) integer matrix whose columns span Z^r.
+    - `max_nodes (int)`: Maximal number of columns added during the depth-first search. Defaults to `10**3`.
+    **Returns:**
+    - `list[int]|None`: The increasing column indices of a Z-basis, or `None` if none was found.
+    """
+    r,N=P.nrows(),P.ncols()
+    R=P.rref()[0]
+    S=[next(j for j in range(N) if R[i,j]!=0) for i in range(r)]
+    while True:
+        A=fmpz_mat(r,r,[P[i,j] for i in range(r) for j in S])
+        if abs(A.det())==1:
+            return sorted(S)
+        X=A.solve(P)
+        rest=sorted(set(range(N))-set(S))
+        step=min(((abs(X[b,j]),j,-S[b],b) for b in range(r) for j in rest if 0<abs(X[b,j])<1),default=None)
+        if step is None:
+            break
+        S[step[3]]=step[1]
+    nodes=0
+    def search(B,S,excluded):
+        nonlocal nodes
+        m=B.nrows()
+        if m==0:
+            return sorted(S)
+        cols=[j for j in range(N) if j not in S and j not in excluded]
+        if len(cols)<m:
+            return None
+        # the columns cols of B span Z^m iff the Hermite normal form of their transpose starts with the identity
+        H=fmpz_mat([[B[i,j] for i in range(m)] for j in cols]).hnf()
+        if any(H[i,i]!=1 for i in range(m)):
+            return None
+        B=B.lll()
+        rows=B.tolist()
+        key=lambda j: (sum(row[j]!=0 for row in rows),sum(abs(row[j]) for row in rows),j)
+        tried=set()
+        for j in sorted((j for j in cols if math.gcd(*(row[j] for row in rows))==1),key=key):
+            if nodes>=max_nodes:
+                return None
+            nodes+=1
+            T=fmpz_mat(m,1,[row[j] for row in rows]).hnf(transform=True)[1]
+            res=search(fmpz_mat(m-1,N,[x for row in (T*B).tolist()[1:] for x in row]),S+[j],excluded|tried)
+            if res is not None:
+                return res
+            tried.add(j)
+        return None
+    return search(P,[],set())
+
+def intersection_form_H22_vertical_from_gram_matrix(M: ArrayLike,max_nodes: int=10**3)->tuple[np.ndarray,np.ndarray]:
+    """
+    **Description:**
+    Z-basis of the vertical cycles spanned by the N products and the intersection form on it. The vertical lattice is
+    Z^N modulo the kernel of the Gram matrix, which v -> v M maps isomorphically onto the row lattice of M. If possible,
+    the basis is a subset of the products themselves, found with `_unimodular_column_subset` (preferring products with
+    small index) from the coordinates of the rows of M in the Hermite normal form basis of the row lattice. Otherwise a
+    warning is raised and the basis is read off from the Hermite normal form U M = H: the first r rows of U.
     **Arguments:**
     - `M (ArrayLike)`: (N,N) integer Gram matrix on the products.
+    - `max_nodes (int)`: Maximal number of depth-first search steps for the subset of products. Defaults to `10**3`.
     **Returns:**
     - `tuple[np.ndarray,np.ndarray]`: C (r,N) integer: row k = coefficients of the k-th Z-basis vector e_k
-        in the N products, and G = C M C^T, the intersection form on that basis (both int64).
+        in the N products (a unit vector if e_k is a single product), and G = C M C^T, the intersection form on that
+        basis (both int64).
     **Raises:**
     - `OverflowError`: Raised if an entry of C or G does not fit into int64.
     """
     M=np.asarray(M,dtype=object)
     N=len(M)
     M=fmpz_mat(M.tolist())
-    H, U=M.hnf(transform=True)
+    H=M.hnf()
     r=H.rank()
-    C=fmpz_mat(r,N,[x for row in U.tolist()[:r] for x in row])
+    # column i of P = coordinates of row i of M in the first r rows of H, i.e. P^T H[:r] = M, solved on the pivot columns
+    P=fmpz_mat(0,N)
+    if r:
+        piv=[next(j for j in range(N) if H[k,j]!=0) for k in range(r)]
+        X=fmpz_mat(r,r,[H[l,j] for j in piv for l in range(r)]).solve(fmpz_mat(r,N,[M[j,i] for j in piv for i in range(N)]))
+        P=fmpz_mat(r,N,[X[k,i].p for k in range(r) for i in range(N)])
+    S=_unimodular_column_subset(P,max_nodes)
+    if S is None:
+        warnings.warn(f"No subset of the products forming a Z-basis was found (depth-first search limited to {max_nodes} steps); the basis vectors are combinations of products.")
+        U=M.hnf(transform=True)[1]
+        C=fmpz_mat(r,N,[x for row in U.tolist()[:r] for x in row])
+    else:
+        C=fmpz_mat(r,N,[int(i==j) for j in S for i in range(N)])
     G=C*M*C.transpose()
     to_int64=lambda X,n,m: np.array([int(x) for row in X.tolist() for x in row],dtype=np.int64).reshape(n,m)
     return to_int64(C,r,N), to_int64(G,r,r)
 
-def intersection_form_H22_vertical(IN_in_basis: Mapping[tuple[int,...],int|float])->tuple[np.ndarray,np.ndarray,dict[int,tuple[int,int]],np.ndarray]:
+def intersection_form_H22_vertical(IN_in_basis: Mapping[tuple[int,...],int|float],max_nodes: int=10**3)->tuple[np.ndarray,np.ndarray,dict[int,tuple[int,int]],np.ndarray]:
     """
     **Description:**
-    Compute the intersection form on the vertical cycles in H22(X,Z)
+    Compute the intersection form on the vertical cycles in H22(X,Z). If possible, the basis consists of products of
+    two basis divisors, see `intersection_form_H22_vertical_from_gram_matrix`.
     **Arguments:**
     - `IN_in_basis (Mapping[tuple[int,...],int|float])`: Intersection numbers in the basis of the CY.
+    - `max_nodes (int)`: Maximal number of depth-first search steps for a basis of products. Defaults to `10**3`.
     **Returns:**
-    - `tuple[np.ndarray,np.ndarray,dict[int,tuple[int,int]]]`: (C, G, inv_dict)
-        C : Integer matrix whose rows are the basis vectors of the vertical cycles in H22(X,Z).
+    - `tuple[np.ndarray,np.ndarray,dict[int,tuple[int,int]],np.ndarray]`: (C, G, inv_dict, mat)
+        C : Integer matrix whose rows are the basis vectors of the vertical cycles in H22(X,Z), in terms of the products.
         G : Intersection form on the vertical cycles in H22(X,Z).
         inv_dict : Dictionary mapping indices in the Gram matrix to pairs of basis vectors.
+        mat : Gram matrix of the products.
     """
     mat,dict_pair_indices,inv_dict=gram_matrix(IN_in_basis)
-    C,G=intersection_form_H22_vertical_from_gram_matrix(mat)
+    C,G=intersection_form_H22_vertical_from_gram_matrix(mat,max_nodes)
     return C, G, inv_dict,mat
-
-# def contract_rays(fan: Fan,rays: Iterable[int],tol: float=1e-9)->Fan:
-#     """
-#     **Description:**
-#     Contracts (blows down) rays of a simplicial fan, one ray r at a time.
-#     If r lies inside a simplicial cone sigma such that every cone containing r misses exactly one ray of sigma, each
-#     such cone c is replaced by (c without r) together with sigma; this inverts `refine_fan`. Otherwise the cones
-#     containing r are retriangulated without r, as in `make_simplicial`. Neighbouring cones are added to the
-#     retriangulated region until it is convex and its triangulation matches the cones around it.
-#     **Arguments:**
-#     - `fan (Fan)`: The simplicial toric fan.
-#     - `rays (Iterable[int])`: One-indexed labels of the rays to contract.
-#     - `tol (float)`: Numerical tolerance. Defaults to `1e-9`.
-#     **Raises:**
-#     - `ValueError`: Raised if a ray cannot be removed without shrinking the support of the fan.
-#     **Returns:**
-#     - `Fan`: The contracted fan over the vector configuration of its rays, labelled 1,...,#rays in their original order.
-#     """
-#     V=fan.vc.vectors()
-#     dim=fan.dim
-#     cones=set(fan.cones())
-#     normal=lambda F: np.linalg.svd(V[np.array(F)-1])[2][-1]
-#     outer=lambda region: {F for F,k in Counter(F for c in region for F in combinations(c,dim-1)).items() if k==1}
-#     for r in rays:
-#         star={c for c in cones if r in c}
-#         c0=next(iter(star))
-#         F=[l for l in c0 if l!=r]
-#         for t in set().union(*star)-set(c0):
-#             M=V[np.array(F+[t])-1].T
-#             if abs(np.linalg.det(M))<tol:
-#                 continue
-#             x=np.linalg.solve(M,V[r-1])
-#             sigma={l for l,xi in zip(F+[t],x) if xi>tol}
-#             new=Counter(tuple(sorted(set(c)-{r}|sigma)) for c in star)
-#             if (x>-tol).all() and all(k==len(sigma) for k in new.values()):
-#                 cones=(cones-star)|set(new)
-#                 break
-#         else:
-#             region=star
-#             while True:
-#                 S=np.array(sorted(set().union(*region)-{r}))
-#                 bound=outer(region)
-#                 bad=set()
-#                 for F in bound:
-#                     s=V[np.append(S,r)-1]@normal(F)
-#                     if (s<-tol).any() and (s>tol).any():
-#                         bad.add(F)
-#                 if not bad and nnls(V[S-1].T,V[r-1])[1]>tol:
-#                     bad=bound
-#                 if not bad:
-#                     tri=VectorConfiguration(V[S-1]).triangulate(make_fine=True)
-#                     new={tuple(sorted(S[np.array(co)-1].tolist())) for co in tri.cones()}
-#                     if outer(new)==bound:
-#                         break
-#                     bad=bound-outer(new)
-#                 nbrs={c for c in cones-region if any(set(F)<=set(c) for F in bad)}
-#                 if not nbrs:
-#                     raise ValueError(f"Ray {r} cannot be contracted: the cones around it cannot be retriangulated without it.")
-#                 region=region|nbrs
-#             cones=(cones-region)|new
-#     used=sorted(set().union(*cones))
-#     relabel={l:i+1 for i,l in enumerate(used)}
-#     return Fan(vc=VectorConfiguration(V[np.array(used)-1]),cones=[tuple(relabel[l] for l in c) for c in cones])
-
-# def fan_from_triangulation(T: Triangulation)->tuple[Fan,np.ndarray]:
-#     """
-#     **Description:**
-#     Returns the fan of a regular star triangulation of a polytope with the origin in its interior, together with heights
-#     generating it. The rays are the points of `T` other than the origin, labelled 1,...,n in the order of `T.labels`.
-#     If `T` is generated by the point heights h, then for every cone sigma the linear function l with l(v)=h(v)-h(0) on
-#     the rays of sigma satisfies l(w)<h(w)-h(0) for all other rays w, i.e. the fan is generated by the vector heights
-#     h-h(0). These are computed exactly, as floats are exact rationals.
-#     **Arguments:**
-#     - `T (Triangulation)`: A regular star triangulation containing the origin.
-#     **Raises:**
-#     - `ValueError`: Raised if `T` does not contain the origin or is not star.
-#     **Returns:**
-#     - `tuple[Fan,np.ndarray]`: The fan and the heights of its vectors in label order (object array of `Fraction`).
-#     """
-#     o=T.polytope().label_origin
-#     if o is None or o not in T.labels or not T.is_star():
-#         raise ValueError("The triangulation must be star with respect to the origin.")
-#     labels=[l for l in T.labels if l!=o]
-#     idx={l:i+1 for i,l in enumerate(labels)}
-#     h={l:Fraction(x.item() if hasattr(x,"item") else x) for l,x in zip(T.labels,T.heights())}
-#     cones=[tuple(sorted(idx[l] for l in s if l!=o)) for s in T.simplices()]
-#     fan=Fan(vc=VectorConfiguration(T.polytope().points(which=labels)),cones=cones)
-#     return fan,np.array([h[l]-h[o] for l in labels],dtype=object)
-
-# def contract_rays_regular(fan: Fan,rays: Iterable[int],heights: ArrayLike,tol: float=1e-8)->Fan:
-#     """
-#     **Description:**
-#     Contracts (deletes) rays R of a complete simplicial fan generated by `heights`, without computing circuits.
-#     Deleting vectors keeps every lower face of the lifted vectors that avoids them, so all cones avoiding R survive and
-#     only the region covered by the cones containing a ray of R is retriangulated. This is done by gift wrapping from the
-#     boundary facets of the region: the cone on the inner side of a facet f is spanned by f and the ray w minimizing
-#     t(w)=(g(w)-l(w))/gamma(w), where w=sum_x beta_x x+gamma(w) n for the inner integral normal n of f and
-#     l(w)=sum_x beta_x g(x). Only the rays of the cones containing a ray of R are candidates, as no other ray lies in
-#     the region. Ties are broken by the symbolic perturbation g+sum_k eps^k e_k (eps->0, k the label), so the result is
-#     the regular triangulation of the remaining vectors for the restricted (perturbed) heights. All decisions are exact:
-#     sides are decided with integral normals, and heights within `tol` of a tie are compared in exact rational
-#     arithmetic (floats are exact rationals). Each boundary facet must be a strict lower face, which holds if `heights`
-#     lie in the interior of the secondary cone of `fan`, and is checked.
-#     **Arguments:**
-#     - `fan (Fan)`: A complete simplicial fan.
-#     - `rays (Iterable[int])`: One-indexed labels of the rays to contract.
-#     - `heights (ArrayLike)`: Heights generating `fan`, one per vector of `fan.vc` in label order (int, float or `Fraction`), e.g. from `fan_from_triangulation`.
-#     - `tol (float)`: Relative margin below which float comparisons are redone exactly. Defaults to `1e-8`.
-#     **Raises:**
-#     - `ValueError`: Raised if the fan is not simplicial or not complete around the rays, if a boundary facet of the region is not a strict lower face for `heights`, or if the remaining rays do not span the region.
-#     **Returns:**
-#     - `Fan`: The contracted fan over the remaining vectors, labelled 1,...,#vectors-#R in their original order. It is generated by the remaining heights.
-#     """
-#     V=np.asarray(fan.vc.vectors(),dtype=np.int64)
-#     Vf=V.astype(float)
-#     gq=[Fraction(x.item() if hasattr(x,"item") else x) for x in heights]
-#     g=np.array([float(x) for x in gq])
-#     dim=V.shape[1]
-#     R={int(r) for r in rays}
-#     cones=[tuple(int(l) for l in c) for c in fan.cones()]
-#     if any(len(c)!=dim for c in cones):
-#         raise ValueError("The fan must be full-dimensional and simplicial.")
-#     inner=[c for c in cones if R.intersection(c)]
-#     outer=[c for c in cones if not R.intersection(c)]
-#     keep=[l for l in range(1,len(V)+1) if l not in R]
-#     relabel={l:i+1 for i,l in enumerate(keep)}
-#     if not inner:
-#         return Fan(vc=VectorConfiguration(V[np.array(keep)-1]),cones=[tuple(relabel[l] for l in c) for c in outer])
-#     W=np.array(sorted(set().union(*inner)-R))
-#     WV=V[W-1]
-#     WVf=Vf[W-1]
-#     gW=g[W-1]
-#     delta=tol*max(1.0,np.abs(gW).max())
-#     gx={int(l):fmpq(gq[l-1].numerator,gq[l-1].denominator) for l in W}
-#     # boundary facets of the region, with the ray of the inner cone opposite to them
-#     side={}
-#     for c in inner:
-#         for x in c:
-#             f=tuple(l for l in c if l!=x)
-#             if f in side:
-#                 del side[f]
-#             else:
-#                 side[f]=x
-#     near=np.array(outer)[np.isin(np.array(outer),W).sum(axis=1)>=dim-1] if outer else np.zeros((0,dim),dtype=int)
-#     outer_facets={tuple(l for l in c if l!=x) for c in near.tolist() for x in c}
-#     if any(R.intersection(f) or f not in outer_facets for f in side):
-#         raise ValueError("The fan must be complete around the rays to be contracted.")
-#     def normal(f,x):
-#         # primitive integral normal of span(f) with <n,x> > 0
-#         N,_=fmpz_mat(V[np.array(f)-1].tolist()).nullspace()
-#         n=np.array([int(N[i,0]) for i in range(dim)],dtype=np.int64)
-#         n//=np.gcd.reduce(np.abs(n))
-#         s=int(n@V[x-1])
-#         if s==0:
-#             raise ValueError(f"Degenerate cone at the facet {f}.")
-#         return n if s>0 else -n
-#     def wrap(f,n,boundary):
-#         F=np.array(f)
-#         B=np.vstack([V[F-1],n])
-#         coeff=np.linalg.solve(B.T.astype(float),WVf.T).T
-#         beta,gam=coeff[:,:-1],coeff[:,-1]
-#         sgn=WV@n
-#         cand=np.flatnonzero(sgn>0)
-#         if len(cand)==0:
-#             raise ValueError(f"The remaining rays do not span the region beyond the facet {f}.")
-#         base=gW-beta@g[F-1]
-#         res=base-(base[cand]/gam[cand]).min()*gam
-#         res[np.isin(W,F)]=np.inf
-#         if (res<-delta).any():
-#             raise ValueError(f"Inconsistent lifting at the facet {f}.")
-#         # exact recomputation for all rays within the margin of the lowest hyperplane through f
-#         Binv=fmpq_mat(fmpz_mat(B.T.tolist())).inv()
-#         gf=[gx[l] for l in f]
-#         ex={}
-#         for w in np.flatnonzero(res<=delta):
-#             c=Binv*fmpq_mat(dim,1,[int(x) for x in WV[w]])
-#             b=[c[i,0] for i in range(dim-1)]
-#             ex[w]=(gx[int(W[w])]-sum((bi*gi for bi,gi in zip(b,gf)),fmpq(0)),b,c[dim-1,0])
-#         t={w:e[0]/e[2] for w,e in ex.items() if sgn[w]>0}
-#         tq=min(t.values())
-#         for w,(bs,_,gm) in ex.items():
-#             r=bs-tq*gm
-#             if r<0:
-#                 raise ValueError(f"Inconsistent lifting at the facet {f}.")
-#             if boundary and sgn[w]<=0 and r==0:
-#                 raise ValueError(f"The facet {f} is not a strict lower face for the given heights; they must lie in the interior of the secondary cone of the fan.")
-#         tied=[w for w in t if t[w]==tq]
-#         if len(tied)>1:
-#             # lexicographic comparison of the eps^k coefficients of t(w), most significant label first
-#             cols=sorted(set(f)|{int(W[w]) for w in tied})
-#             def key(w):
-#                 _,b,gm=ex[w]
-#                 coef={int(W[w]):fmpq(1)/gm}
-#                 for x,bi in zip(f,b):
-#                     coef[x]=coef.get(x,fmpq(0))-bi/gm
-#                 return [coef.get(k,fmpq(0)) for k in cols]
-#             tied=[min(tied,key=key)]
-#         return int(W[tied[0]])
-#     rng=np.random.default_rng(0)
-#     open_facets={f:normal(f,x) for f,x in side.items()}
-#     boundary=set(side)
-#     closed=set()
-#     new=[]
-#     if not side:
-#         # the region is everything: start from the lower cone containing a generic vector, found by an LP
-#         lp=linprog(gW,A_eq=WVf.T,b_eq=WVf.T@(rng.random(len(W))+0.1),bounds=(0,None),method="highs")
-#         C=tuple(sorted(int(l) for l in W[lp.x>tol])) if lp.success else ()
-#         if len(C)!=dim:
-#             raise ValueError("Could not find a starting cone; the remaining rays may not span the space.")
-#         a=fmpq_mat(fmpz_mat(V[np.array(C)-1].tolist())).solve(fmpq_mat(dim,1,[gx[l] for l in C]))
-#         if any(gx[int(l)]-sum((int(v)*a[i,0] for i,v in enumerate(V[l-1])),fmpq(0))<=0 for l in W if l not in C):
-#             raise ValueError("The heights are degenerate at the starting cone; perturb them generically.")
-#         new.append(C)
-#         open_facets={tuple(l for l in C if l!=y):-normal(tuple(l for l in C if l!=y),y) for y in C}
-#     while open_facets:
-#         f,n=open_facets.popitem()
-#         a=wrap(f,n,f in boundary)
-#         C=tuple(sorted(f+(a,)))
-#         closed.add(f)
-#         for y in C:
-#             h=tuple(l for l in C if l!=y)
-#             if h==f:
-#                 continue
-#             if h in open_facets:
-#                 if open_facets[h]@V[y-1]<=0:
-#                     raise ValueError(f"Inconsistent orientation at the facet {h}.")
-#                 del open_facets[h]
-#                 closed.add(h)
-#             elif h in closed:
-#                 raise ValueError(f"The facet {h} is covered more than twice.")
-#             else:
-#                 open_facets[h]=-normal(h,y)
-#         new.append(C)
-#         if len(new)>100*len(inner)+1000:
-#             raise RuntimeError("Gift wrapping did not terminate.")
-#     # sanity check: generic points of the old cones lie in exactly one new cone and vice versa
-#     def hits(cs_pts,cs):
-#         P=np.einsum("ij,ijk->ik",rng.random((len(cs_pts),dim))+0.1,Vf[np.array(cs_pts)-1])
-#         inv=np.linalg.inv(Vf[np.array(cs)-1].transpose(0,2,1))
-#         step=max(1,2_000_000//(len(cs)*dim))
-#         return np.concatenate([(np.einsum("cij,pj->cpi",inv,P[i:i+step])>=-1e-9).all(axis=2).sum(axis=0) for i in range(0,len(P),step)])
-#     if (hits(inner,new)!=1).any() or (hits(new,inner)!=1).any():
-#         raise RuntimeError("The new cones do not cover the region of the contracted rays exactly once.")
-#     unused=set(keep)-set().union(*outer,*new)
-#     if unused:
-#         warnings.warn(f"The rays {sorted(unused)} are not used by the contracted fan (not lower for the given heights).")
-#     return Fan(vc=VectorConfiguration(V[np.array(keep)-1]),cones=[tuple(relabel[l] for l in c) for c in outer+new])
 
 def reorder_fan(fan: Fan,vectors: ArrayLike)->Fan:
     """
@@ -5646,7 +5912,7 @@ def reorder_fan(fan: Fan,vectors: ArrayLike)->Fan:
     new_label=dict(zip(fan.vc.labels,np.atleast_1d(vc.vectors_to_labels(old)).tolist()))
     return Fan(vc=vc,cones=[tuple(new_label[l] for l in c) for c in fan.cones()])
 
-def face_fan(p: Polytope, simplicial: bool = False)->Fan:
+def face_fan(p: Polytope,simplicial: bool=False)->Fan:
     """
     **Description:**
     Constructs the face fan of a polytope containing the origin in its interior: its rays are the vertices of `p` and
@@ -5663,7 +5929,6 @@ def face_fan(p: Polytope, simplicial: bool = False)->Fan:
     ineqs=p.inequalities()
     if p.dim()!=V.shape[1] or (ineqs[:,-1]<=0).any():
         raise ValueError("The polytope must be full-dimensional with the origin in its interior.")
-    # vertex j lies on facet i iff it saturates the i-th inequality
     on_facet=ineqs[:,:-1]@V.T+ineqs[:,-1:]==0
     if simplicial:
         return make_simplicial(Fan(vc=VectorConfiguration(V),cones=[tuple(np.flatnonzero(row)+1) for row in on_facet]))
@@ -5684,7 +5949,8 @@ def _stabilizer_order(idx: np.ndarray)->np.ndarray:
         run=np.where(idx[:,j]==idx[:,j-1],run+1,1)
         order*=run
     return order
-def tensor_symm_in_glsm_basis(tensor: Mapping[int,int|float]|Mapping[tuple[int,...],int|float],Q: ArrayLike,basis: ArrayLike,tol: float=1e-5,block_bytes: int=2**27,max_sparse_entries: int=2*10**7)->dict[int,int|float]|dict[tuple[int,...],int|float]:
+
+def _tensor_symm_in_glsm_basis(tensor: Mapping[int,int|float]|Mapping[tuple[int,...],int|float],Q: ArrayLike,basis: ArrayLike,tol: float=1e-5,block_bytes: int=2**27,max_sparse_entries: int=2*10**7)->dict[int,int|float]|dict[tuple[int,...],int|float]:
     """
     **Description:**
     Transform a symmetric tensor from a prime-toric basis to the GLSM basis.
@@ -5717,8 +5983,6 @@ def tensor_symm_in_glsm_basis(tensor: Mapping[int,int|float]|Mapping[tuple[int,.
     vals=np.array(list(tensor.values()),dtype=float)
     As=sps.csr_matrix(np.where(np.abs(A)>1e-12*np.abs(A).max(),A,0))
     if len(vals)*(As.nnz/h)**rank<=max_sparse_entries:
-        # T = sum over slot permutations of U with U[key] = T[key]/|Stab(key)|, hence T'[b] = |Stab(b)| * sum of the
-        # contracted U over all orderings of b: contract U slot by slot, merging equal entries, then sort and merge
         idx,vals=old,vals/_stabilizer_order(old)
         for k in range(rank):
             cnt=np.diff(As.indptr)[idx[:,k]]
@@ -5762,3 +6026,263 @@ def tensor_symm_in_glsm_basis(tensor: Mapping[int,int|float]|Mapping[tuple[int,.
     out[is_int]=rounded[is_int].astype(np.int64).astype(object)
     keys=keys[:,0].tolist() if integer_keys else zip(*keys.T.tolist())
     return dict(zip(keys,out.tolist()))
+
+def is_lattice_newton_polytope(rays,weights):
+    """ Checks whether the Newton Polytope of a given divisor will be a lattice polytope"""
+    P=ppl.C_Polyhedron(len(rays[0]),"universe")
+    for ray, weight in zip(rays,weights,strict=True):
+        P.add_constraint(ppl.Linear_Expression(list(ray),weight)>=0)
+    return (not P.is_empty() and P.is_bounded() and all(v.divisor()==1 for v in P.minimized_generators()))
+
+def fix_tau_row(Q,IN,d7_rows,invariant_rows=None,tol=1e-4,decimals=10):
+    """
+    **Description:**
+    Fixes the ambiguity q_tau -> q_tau + n^mu q_mu of the tau row (last row) of an adapted GLSM by Weyl invariance of the tau curve class, which reduces to
+        kappa_{ijk mu} = n_mu kappa_{ijk tau}   for all invariant triples (i,j,k) and D7 directions mu.
+    With K_{(ijk),mu}=kappa_{ijk mu}, k3_{ijk}=kappa_{ijk tau}, n is determined on V' = ker(|k3|^2 K - k3 k3^T K) (all of span(C_mu) iff the enhancement is
+    semisimple) by n(v) = k3.Kv/|k3|^2; on the complement (Weyl-invariant, abelian directions) the shift is a convention, fixed here by integrality:
+    n takes values in Z/gcd(k3) on the saturated lattice V'_Z, k is the minimal integer with k n(V'_Z) in Z, and k n is an integer extension (it exists
+    since V'_Z is a direct summand), shortened along the free directions. The new tau row is k*q_tau + sum_mu k n_mu q_mu, so that
+    z'^tau = k z^tau + sum_mu k n_mu z^mu is the axio-dilaton. In the dual basis J'^mu = J^mu - n_mu J^tau, J'^tau = J^tau/k (others unchanged) one has kappa'_{ijk mu}=0, kappa'_{ijk tau'} = kappa_{ijk tau}/k.
+    The intersection numbers are updated sparsely: substituting x_tau = y_tau/k - n.y_D7, an entry kappa_c with c=(rest,tau^t) contributes to
+        kappa'_{sort(rest+M)} += kappa_c prod_e binom(#_e rest + #_e M, #_e M) k^{-#_tau M} prod_{mu in M}(-n_mu)
+    for every multiset M of size t from {tau} u {mu : n_mu != 0}; entries without tau are unchanged.
+    **Arguments:**
+    - `Q (ArrayLike)`: GLSM charge matrix [bulk | D7 | (fiber-only) | tau].
+    - `IN (Mapping[tuple[int,...],int|float])`: Integral intersection numbers in the basis dual to the rows of Q (sorted 1-based keys); all key lengths are transformed.
+    - `d7_rows (Sequence[int])`: 0-based indices of the D7 rows.
+    - `invariant_rows (Sequence[int]|None)`: 0-based rows with Weyl-invariant flat coordinates. Defaults to all rows except `d7_rows` and the last.
+    - `tol (float)`: New entries are rounded to `decimals`, values within `tol` of an integer are set to it, and entries with |value| <= tol are dropped
+      (as in `cy_intersection_numbers`); near-integral values are returned as int. Defaults to `1e-5`.
+    - `decimals (int)`: Number of decimals to round to. Defaults to `10`.
+    **Returns:**
+    - `tuple`: (Q_new, IN_new, k, n, free) with IN_new values int (near-integral) or float, n a float array, free an integer basis (rows) of the shifts of n not fixed by the
+      condition (empty iff the fix is unique).
+    """
+    Q=np.asarray(Q,dtype=int); N=len(Q); d7=[int(i)+1 for i in d7_rows]; m=len(d7)
+    inv=set(range(1,N))-set(d7) if invariant_rows is None else {int(i)+1 for i in invariant_rows}
+    pos={a:i for i,a in enumerate(d7+[N])}; R={}
+    for key,v in IN.items():
+        x=[a for a in key if a in pos]
+        if len(key)==4 and len(x)==1:
+            s=list(key); s.remove(x[0])
+            if inv.issuperset(s): R.setdefault(tuple(s),np.zeros(m+1))[pos[x[0]]]=v
+    R=np.rint(np.array(list(R.values())).reshape(-1,m+1)).astype(np.int64); K,k3=R[:,:m],R[:,m]; s=int(k3@k3)
+    if s==0: raise ValueError("kappa_{ijk tau} vanishes on the invariant rows")
+    V=integral_kernel(s*K-np.outer(k3,k3@K)); r=len(V)
+    free=integral_kernel(V) if r else np.eye(m,dtype=int)
+    g=np.gcd.reduce(k3); kh=k3//g
+    c,rem=np.divmod(V@K.T@kh,kh@kh); assert not rem.any()
+    d=np.gcd.reduce(np.r_[g,c]); k=int(g//d)
+    nk=np.zeros(m,dtype=int)
+    if r:
+        H,U=hnf(V.T,return_transform=True); assert (H[:r]==np.eye(r)).all()
+        nk=U[:r].T@(c//d)
+        if len(free): nk-=free.T@np.rint(np.linalg.lstsq(free.T,nk,rcond=None)[0]).astype(int)
+    n=nk/k
+    Qn=Q.copy(); Qn[-1]=k*Q[-1]+nk@Q[np.array(d7,dtype=int)-1]
+    w={N:1/k,**{a:-x for a,x in zip(d7,n.tolist()) if x}}
+    acc=defaultdict(float)
+    for key,v in IN.items():
+        r=len(key); t=key.count(N); rest=key[:r-t]; C=Counter(rest)
+        for M in combinations_with_replacement(w,t):
+            acc[tuple(sorted(rest+M))]+=v*prod(comb(C[e]+j,j)*w[e]**j for e,j in Counter(M).items())
+    v=np.round(np.fromiter(acc.values(),float,len(acc)),decimals); r=np.rint(v); isint=np.abs(v-r)<=tol
+    return Qn,{b:(int(ri) if ii else x) for b,x,ri,ii in zip(acc,v.tolist(),r.tolist(),isint.tolist()) if abs(x)>tol},k,n,free
+
+def fix_tau_row_uplift(F,symmetric=True,tol=1e-6):
+    """`fix_tau_row` applied to the adapted GLSM of an F-theory uplift (optionally in the symmetric D7 basis). Returns its output plus the D7 rows."""
+    Q,rows=adapted_glsm_uplift(F,return_rows=True); d7=rows["d7"]
+    IN=_tensor_symm_in_glsm_basis(F.intersection_numbers_M(),Q,F.basis_homology_M())
+    if symmetric:
+        res=symmetric_d7_basis(Q,IN,d7,tol=tol); Q,IN=res["Q"],res["intersection_numbers"]
+    return (*fix_tau_row(Q,IN,d7),d7)
+
+def check_sen_scaling(F: "F_Theory_Uplift",Q: ArrayLike)->tuple[bool,np.ndarray]:
+    """
+    **Description:**
+    Checks the normalization of the tau row (last row) of a GLSM against Sen's weak-coupling limit a3 -> eps a3, a4 -> eps a4, a6 -> eps^2 a6 (3.29),
+    in which e^{2 pi i tau} ~ 1/j ~ eps^2 while the bulk and D7 moduli stay finite. A point (rho~,t1,t2) of the Weierstrass polytope is the Tate monomial
+    a_k with z-degree k = t2+1 (y^2, x^3: k=0; points of the base polytope have t2=0, i.e. k=1); its coefficient scales as eps^s with s = 1 for a3, a4,
+    s = 2 for a6 and s = 0 otherwise, and the origins do not scale. The GKZ coordinate Psi_a of row a therefore scales as eps^{(Q s)_a}, and by the leading
+    mirror map so does e^{2 pi i z^a}. Expected: (0,...,0,2).
+    **Arguments:**
+    - `F (F_Theory_Uplift)`: The F-theory uplift.
+    - `Q (ArrayLike)`: A GLSM of `F` with columns ordered as `F.vectors_M_conv_toric_fan()` and the tau row last, e.g. from `adapted_glsm_uplift`,
+      `symmetric_glsm_uplift` or `fix_tau_row`.
+    **Returns:**
+    - `tuple[bool,np.ndarray]`: Whether the tau row scales as eps^2 and all other rows as eps^0, and the eps-exponents of all rows.
+    """
+    V=np.asarray(F.vectors_M_conv_toric_fan()); Q=np.asarray(Q)
+    assert {(0,0,0,0,0,-1),(0,0,0,0,1,-1)}<=set(map(tuple,V.tolist()))
+    k=V[:,-1]+1                                                      
+    w=Q@np.where(k>2,(k-1)//2,0)                                 
+    return bool(w[-1]==2 and not w[:-1].any()),w
+
+def d7_mori_face(G: ArrayLike,d7_rows: Sequence[int])->tuple[np.ndarray,np.ndarray]:
+    """
+    **Description:**
+    Face of the Mori cone spanned by the curves that shrink on the D7 face of the Kahler cone. Curve classes are written in the basis of the GLSM rows, so t_a is the volume of the
+    row curve l^a and the D7 face is K_D7 = K cap {t_mu = 0 : mu in d7_rows}, K = {t : G t >= 0}. A point t* in the relative interior of K_D7 is found by the LP
+        max sum_i s_i   s.t.   G t >= s,   0 <= s <= 1,   t_mu = 0,
+    whose optimum has s_i = 1 exactly for the generators that are not identically zero on K_D7. The curves shrinking at t* span the dual face MC cap t*^perp, generated by the G_i with s_i = 0.
+    The face is extremal, so every splitting of a class in it into effective classes stays in it: the HKTY series truncated to the face is closed and its GV invariants are exact.
+    **Arguments:**
+    - `G (ArrayLike)`: Generators (rays or Hilbert basis) of the Mori cone in the GLSM basis, one per row.
+    - `d7_rows (Sequence[int])`: 0-based indices of the D7 rows.
+    **Returns:**
+    - `tuple[np.ndarray,np.ndarray]`: Boolean mask of the generators lying in the face, and t*.
+    """
+    G=np.asarray(G,dtype=float); n,h=G.shape
+    bounds=[(None,None)]*h+[(0,1)]*n
+    for mu in d7_rows: bounds[mu]=(0,0)
+    res=linprog(np.r_[np.zeros(h),-np.ones(n)],A_ub=np.hstack([-G,np.eye(n)]),b_ub=np.zeros(n),bounds=bounds,method="highs")
+    if res.status: raise RuntimeError(res.message)
+    return res.x[h:]<0.5,res.x[:h]
+
+def compute_d7_gv_invariants(F,q=None,d7_rows=None,max_deg=5,min_points=None,hilbert_basis=False):
+    """
+    **Description:**
+    Genus-zero GV invariants of the curve classes in the face of the Mori cone dual to the D7 face of the Kahler cone (all t_mu = 0 for the D7 rows, all other directions generic),
+    see `d7_mori_face`. Only classes in that face are enumerated, which is exact since the face is extremal.
+    Warns if the face is not spanned by the D7 rows alone, i.e. if curves with non-D7 components shrink as well.
+    **Arguments:**
+    - `F (F_Theory_Uplift)`: The F-theory uplift.
+    - `q (ArrayLike|None)`: GLSM charge matrix. Defaults to `adapted_glsm_uplift(F)`.
+    - `d7_rows (Sequence[int]|None)`: 0-based D7 rows of `q`; required if `q` is given.
+    - `max_deg (int|None)`: Maximal degree w.r.t. the grading vector of the Mori cone (takes precedence over `min_points` in cygv). Defaults to `5`.
+    - `min_points (int|None)`: Minimal number of points, used if `max_deg` is `None`.
+    - `hilbert_basis (bool)`: Generate the face by the Hilbert basis instead of the rays; needed to reach all lattice points of the face if the ray semigroup is not saturated.
+    **Returns:**
+    - `tuple`: (gv, q, surface_dict) with gv the output of `compute_gv` (all classes lie in the face).
+    """
+    if q is None: q,rows=adapted_glsm_uplift(F,return_rows=True); d7_rows=rows["d7"]
+    elif d7_rows is None: raise ValueError("d7_rows is required if q is given")
+    q=np.asarray(q,dtype=int)
+    MC=mori_cone_in_glsm_basis(q,F.M_conv_toric_fan())
+    G=np.rint(np.asarray(MC.hilbert_basis() if hilbert_basis else MC.rays(),dtype=float)).astype(int)
+    face,_=d7_mori_face(G,d7_rows)
+    if not face.any() or face.all(): raise ValueError("The D7 locus t_mu=0 is not a proper face of the Kahler cone: "+("no curve shrinks." if not face.any() else "it is the origin."))
+    Gf=G[face]; r=np.linalg.matrix_rank(Gf)
+    if r!=len(d7_rows) or np.delete(Gf,d7_rows,axis=1).any():
+        warnings.warn(f"The shrinking face has rank {r} for {len(d7_rows)} D7 rows and/or contains curves with non-D7 components; they shrink on the D7 face too.")
+    IN_surfaces,surface_dict=intersection_number_surfaces(tensor_symm_in_basis(F.intersection_numbers_M(),F.basis_homology_M(),q,in_prime_basis=True))
+    gv=compute_gv(generators=Gf,grading_vector=MC.find_grading_vector(),q=q,intnums=IN_surfaces,max_deg=max_deg,min_points=min_points,nefpart=F.nef_partition_M(zero_based=True,toric_fan_adapted=True))
+    return gv,q,surface_dict
+
+def minimal_mori_face(G: ArrayLike,zero_rows: Sequence[int])->np.ndarray:
+    """
+    **Description:**
+    Minimal face of the Mori cone MC = cone(G) containing MC cap L, L = {d : d_a = 0 for a in zero_rows}. A generator g_i lies in it iff it appears with positive coefficient in some
+    lambda >= 0 with (sum_j lambda_j g_j)_a = 0 for all a in zero_rows, since faces are extremal and a point of relint(MC cap L) has the minimal face as its own face. The maximal such support
+    is found by the LP
+        max sum_i s_i   s.t.   sum_j lambda_j G_ja = 0 (a in zero_rows),   s <= lambda,   lambda >= 0,   0 <= s <= 1,
+    whose optimum has s_i = 1 exactly on the support. No assumption is made on whether the unit vectors of zero_rows are generators of MC.
+    **Arguments:**
+    - `G (ArrayLike)`: Generators (rays or Hilbert basis) of the Mori cone in the GLSM basis, one per row.
+    - `zero_rows (Sequence[int])`: 0-based GLSM rows on which the classes of interest have degree zero.
+    **Returns:**
+    - `np.ndarray`: Boolean mask of the generators lying in the face.
+    """
+    G=np.asarray(G,dtype=float); n=len(G); z=list(zero_rows)
+    A_eq=np.hstack([G[:,z].T,np.zeros((len(z),n))])
+    res=linprog(np.r_[np.zeros(n),-np.ones(n)],A_ub=np.hstack([-np.eye(n),np.eye(n)]),b_ub=np.zeros(n),A_eq=A_eq,b_eq=np.zeros(len(z)),
+                bounds=[(0,None)]*n+[(0,1)]*n,method="highs")
+    if res.status: raise RuntimeError(res.message)
+    return res.x[n:]>0.5
+
+def period_sector(q: ArrayLike,nefpart: Sequence[Sequence[int]],d: ArrayLike)->int:
+    """
+    **Description:**
+    Order of vanishing at rho = 0 of the I-function coefficient c_d(rho) = prod_j Gamma(1+L_j.(d+rho))/Gamma(1+L_j.rho) prod_I Gamma(1+D_I.rho)/Gamma(1+D_I.(d+rho))
+    of the curve class d, i.e. the lowest cohomological sector H^{2m} of the periods to which d contributes: m = #{I : D_I.d < 0} - #{j : L_j.d < 0}, with D_I.d = (q^T d)_I
+    and L_j = sum of the columns of nef part j. m = 0: fundamental period, m = 1: mirror map, m = 2: genus-zero (GV) sector, m >= 3: sectors fixed by the lower ones.
+    **Arguments:**
+    - `q (ArrayLike)`: GLSM charge matrix.
+    - `nefpart (Sequence[Sequence[int]])`: 0-based column indices of the nef partition parts.
+    - `d (ArrayLike)`: Curve class in the basis dual to the rows of `q`.
+    **Returns:**
+    - `int`: The sector m.
+    """
+    c=np.asarray(q,dtype=int).T@np.asarray(d,dtype=int)
+    return int((c<0).sum())-sum(int(c[list(part)].sum()<0) for part in nefpart)
+
+def compute_d7_gv_invariants_weak_coupling(F,q=None,zero_rows=None,directions=None,max_deg=5,min_points=None,face_hilbert_basis=True,strict=True,return_diagnostics=False):
+    """
+    **Description:**
+    Genus-zero GV invariants that survive the limit t = t0 + s v, s -> infinity, with v a generic point of the cone Gamma spanned by the rows of `directions` (supported on
+    `zero_rows`): large complex structure of the base and weak coupling (e^{2 pi i tau} -> 0) at finite, generic D7 moduli, in the phase of `F.M_conv_toric_fan()`.
+    A term N_d Li_2(q^d) scales as exp(-2 pi s d.v): it survives iff d.r = 0 for every generator r of Gamma (for Gamma of full rank in the zero_rows coordinates this is
+    d_a = 0 for all a in zero_rows), is suppressed iff d.r >= 0, and diverges if some d.r < 0. The function
+      1. finds the minimal Mori face containing {d : d_a = 0 for a in zero_rows} (`minimal_mori_face` on the Mori rays), generates it by the Hilbert basis of this
+         low-dimensional face (so that cygv reaches all its lattice points), enumerates its GV invariants (exact, since a face is closed under effective splitting) and keeps
+         the classes with d.r = 0 for all r;
+      2. runs cheap validity tests of the limit in this phase: a class with d.r < 0 for some r must not enter the periods. Tested are the Mori rays with d.r < 0 (the
+         obstructing generators) and the enumerated face classes: `period_sector` m <= 1 (fundamental period or mirror map; the flat D7 coordinates then diverge) is fatal,
+         m = 2 is fatal iff the GV invariant is nonzero (cygv `target_points` for the rays), m >= 3 is harmless. If no ray obstructs, Gamma lies in the ambient Kahler cone and
+         the limit is valid unconditionally; otherwise it is only tested on these classes, which is reported in a warning.
+    Warns if the Sen scaling vector of `q` (`check_sen_scaling`) has components outside zero_rows (the weak-coupling limit then moves D7 or fiber moduli), and raises if the
+    rows of `q` do not span the saturated lattice (cygv then misses curve classes; e.g. `fix_tau_row` with k > 1).
+    **Arguments:**
+    - `F (F_Theory_Uplift)`: The F-theory uplift.
+    - `q (ArrayLike|None)`: GLSM charge matrix with the row structure [bulk | fiber-only | D7 | tau] of `adapted_glsm_uplift` (e.g. from `symmetric_glsm_uplift`). Defaults to `adapted_glsm_uplift(F)`.
+    - `zero_rows (Sequence[int]|None)`: 0-based rows sent to infinity. Defaults to the bulk rows and the tau row of `adapted_glsm_uplift(F)`.
+    - `directions (ArrayLike|str|None)`: Generators of Gamma, one per row, in the Kahler-parameter basis dual to the rows of `q`, supported on `zero_rows`. `None`: the unit
+      vectors of `zero_rows` (every modulus independently). `"nef"`: the extremal rays of the projection of the ambient Kahler cone onto the non-tau zero_rows (the nef cone of
+      the pure-bulk curves, so that the base LCS limit is taken inside it) together with the unit vector of the tau row. Defaults to `None`.
+    - `max_deg (int|None)`: Maximal degree w.r.t. the grading vector of the Mori cone for the face enumeration (takes precedence over `min_points` in cygv). Defaults to `5`.
+    - `min_points (int|None)`: Minimal number of points for the face enumeration, used if `max_deg` is `None`.
+    - `face_hilbert_basis (bool)`: Generate the face by its Hilbert basis (cheap, the face is low-dimensional) instead of its rays. Defaults to `True`.
+    - `strict (bool)`: Raise `ValueError` if a validity test fails; otherwise warn and return the restricted invariants anyway. Defaults to `True`.
+    - `return_diagnostics (bool)`: Also return a dict with keys `directions` (R), `ambient_nef` (bool), `obstructing_generators` (Mori rays g with some g.r < 0, with their
+      sector), `face_generators`, `gv_face` (unrestricted face invariants), `bad` (classes that invalidate the limit, with sector and GV invariants), `sen_scaling`. Defaults to `False`.
+    **Returns:**
+    - `tuple`: (gv, q, surface_dict) with gv the restricted output of `compute_gv`; with `return_diagnostics`, (gv, q, surface_dict, diagnostics).
+    """
+    Q0,rows=adapted_glsm_uplift(F,return_rows=True)
+    q=Q0 if q is None else np.asarray(q,dtype=int)
+    if (idx:=abs(int(np.prod(np.diag(snf(q))[:len(q)]))))!=1: raise ValueError(f"The rows of q span a sublattice of index {idx}; use a basis of the saturated lattice for GV computations.")
+    z=[int(a) for a in ([*rows["bulk"],rows["tau"]] if zero_rows is None else zero_rows)]; nz=[a for a in range(len(q)) if a not in z]
+    try:
+        _,w=check_sen_scaling(F,q)
+        if w[nz].any(): warnings.warn(f"The Sen scaling vector {w.tolist()} has components outside zero_rows: the weak-coupling limit moves D7/fiber moduli; fix the tau row first (fix_tau_row).")
+    except AssertionError: w=None
+    fan=F.M_conv_toric_fan(); nefpart=F.nef_partition_M(zero_based=True,toric_fan_adapted=True)
+    MC=mori_cone_in_glsm_basis(q,fan); gvec=MC.find_grading_vector()
+    G=np.rint(np.asarray(MC.rays(),dtype=float)).astype(int)
+    # limit-direction cone Gamma, generated by the rows of R
+    if directions is None: R=np.eye(len(q),dtype=int)[z]
+    elif isinstance(directions,str) and directions=="nef":
+        tau=int(rows["tau"]); zb=[a for a in z if a!=tau]
+        Kr=np.rint(np.asarray(MC.dual().rays(),dtype=float)).astype(int)[:,zb]; Kr=Kr[Kr.any(axis=1)]
+        R=np.zeros((0,len(q)),dtype=int)
+        if len(zb): Kr=np.rint(np.asarray(Cone(Kr).extremal_rays(),dtype=float)).astype(int); R=np.zeros((len(Kr),len(q)),dtype=int); R[:,zb]=Kr
+        if tau in z: R=np.vstack([R,np.eye(len(q),dtype=int)[[tau]]])
+    else:
+        R=np.asarray(directions,dtype=int)
+        if R[:,nz].any(): raise ValueError("directions must be supported on zero_rows.")
+    face=minimal_mori_face(G,z)
+    if not face.any(): raise ValueError("No effective class has zero degree along zero_rows.")
+    Gf=np.rint(np.asarray(Cone(G[face]).hilbert_basis() if face_hilbert_basis else G[face],dtype=float)).astype(int)
+    IN_surfaces,surface_dict=intersection_number_surfaces(tensor_symm_in_basis(F.intersection_numbers_M(),F.basis_homology_M(),q,in_prime_basis=True))
+    gv_face=compute_gv(generators=Gf,grading_vector=gvec,q=q,intnums=IN_surfaces,max_deg=max_deg,min_points=min_points,nefpart=nefpart)
+    gv=[e for e in gv_face if not (R@np.asarray(e[0][0])).any()]
+    # validity of the limit on the obstructing rays and the face classes: negative volume growth must not enter the periods
+    obstructing={tuple(int(x) for x in g):period_sector(q,nefpart,g) for g in G if (R@g<0).any()}; ambient_nef=not obstructing; bad={}
+    if not ambient_nef:
+        bad={d:(m,None) for d,m in obstructing.items() if m<=1}
+        targets=[d for d,m in obstructing.items() if m==2]
+        gv_t=list(compute_gv(generators=G,grading_vector=gvec,q=q,intnums=IN_surfaces,nefpart=nefpart,target_points=np.array(targets))) if targets else []
+        for d in targets:
+            if inv:=[e for e in gv_t if e[0][0]==d and e[1]!=0]: bad[d]=(2,inv)
+        for e in gv_face:
+            if e[1]!=0 and (R@np.asarray(e[0][0])<0).any(): bad.setdefault(e[0][0],(period_sector(q,nefpart,e[0][0]),[]))[1].append(e)
+        if bad:
+            msg=("The limit along the given directions leaves the convergence region of this phase: classes with negative volume growth enter the periods: "+
+                 ", ".join(f"{d} (sector {m}{'' if inv is None else ', GV '+str(inv)})" for d,(m,inv) in bad.items())+".")
+            if strict: raise ValueError(msg)
+            warnings.warn(msg)
+        else: warnings.warn(f"The directions {R.tolist()} are not nef on the ambient toric variety (obstructing rays {list(obstructing)}); the limit was verified to be valid only on these rays and on the face classes up to degree {max_deg}.")
+    if not return_diagnostics: return gv,q,surface_dict
+    diag={"directions":R,"ambient_nef":ambient_nef,"obstructing_generators":obstructing,"face_generators":Gf,"gv_face":gv_face,"bad":bad,"sen_scaling":w}
+    return gv,q,surface_dict,diag

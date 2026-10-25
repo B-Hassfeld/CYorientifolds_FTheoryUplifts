@@ -102,21 +102,27 @@ class CY_orientifold():
         self.ambient_triangulation = False
         self._multiplier = 6
         self.__o_planes = None
+        self.__fixed_locus = {}
         self.__hodge_numbers_weighted=None
+        self.__h_prime_is_lattice=None
+        self.__is_trilayer_orientifold=None
         match fan_polytope_or_points:
             case Polytope():
                 if xi is None:
                     if fan_polytope_or_points.is_trilayer():
-                        xi = -UF.find_trilayer_vertex_polytope(fan_polytope_or_points)
+                        xi = -UF.find_trilayer_vertex(fan_polytope_or_points)
                     else:
                         raise ValueError("If polytope is not trilayer, xi has to be defined")
                 self.__p = fan_polytope_or_points
                 self._original_verts=fan_polytope_or_points.vertices()
-                ind = UF.get_index(fan_polytope_or_points.points(), np.zeros(len(fan_polytope_or_points.vertices()[0])))
-                if len(ind) > 0:
-                    pts = np.delete(fan_polytope_or_points.points(), ind[0], axis=0)
+                if fan_polytope_or_points.is_reflexive():
+                    pts=fan_polytope_or_points.points_not_interior_to_facets()[1:]
                 else:
-                    pts = fan_polytope_or_points.points()
+                    ind = UF.get_index(fan_polytope_or_points.points(), np.zeros(len(fan_polytope_or_points.vertices()[0])))
+                    if len(ind) > 0:
+                        pts = np.delete(fan_polytope_or_points.points(), ind[0], axis=0)
+                    else:
+                        pts = fan_polytope_or_points.points()
             case VectorConfiguration():
                 if xi is None:
                     raise ValueError("xi has to be defined")
@@ -160,9 +166,13 @@ class CY_orientifold():
                         if orbifold_pts_refined is not None:
                             self.__yields_nef_decomposition = True
                             self.__normal_fan = normal_fan
+                            inds=UF.intersecting_points(orbifold_pts_refined,polytopes=[NP_orbifold],as_indices=True)
+                            orbifold_pts_refined=orbifold_pts_refined[inds]
+                            line_bundles=line_bundles[inds]
                             Lambda_inv=np.linalg.inv(Lambda)
                             self.__CY_ambient_pts=UF.make_rows_integer((Lambda_inv@orbifold_pts_refined.T).T)
                             self.__p=None
+                            self.__toric_fan=None
                             orbifold_pts = orbifold_pts_refined
                             orbifold_line_bundle = line_bundles[:, 0]
                             self.ambient_triangulation=False
@@ -356,6 +366,23 @@ class CY_orientifold():
         """
         return self.__regular
 
+    def is_trilayer_orientifold(self) -> bool:
+        """
+        **Description:**
+
+        Returns whether the orientifold is a trilayer orientifold, i.e. whether `polytope()` is trilayer and the orientifold action is the one defined by its trilayer vertex `v` (see `UF.find_trilayer_vertex`). Since the `Z_2` action defined by `xi/2` only depends on `xi` modulo 2, `xi` and `v` are compared modulo 2 (in particular, the default `xi=-v` inferred for trilayer polytopes is accepted).
+
+        **Returns:**
+
+        - `bool`: `True` if the orientifold is a trilayer orientifold, otherwise `False`.
+
+        """
+        if self.__is_trilayer_orientifold is None:
+            p = self.polytope()
+            self.__is_trilayer_orientifold = bool(p.is_trilayer()) and bool(np.all((np.asarray(self.xi(), dtype=int) - UF.find_trilayer_vertex(p)) % 2 == 0))
+        return self.__is_trilayer_orientifold
+
+
     def line_bundle(self) -> np.ndarray | None:
         """
         **Description:**
@@ -473,6 +500,11 @@ class CY_orientifold():
         """
         return self.yields_nef_decomposition() and self.yields_partition()
     
+    def h_prime_is_lattice(self) -> bool:
+        if self.__h_prime_is_lattice is None:
+            self.__h_prime_is_lattice = UF.is_lattice_newton_polytope(self.vectors_orbifold(),2*(1-self.line_bundle()))
+        return self.__h_prime_is_lattice
+
     def polytope(self) -> Polytope:
         """
         **Description:**
@@ -535,16 +567,43 @@ class CY_orientifold():
         """
         **Description:**
     
-        Computes and caches the fixed loci of the `Z_2` orientifold action in the Calabi-Yau ambient toric fan.
-    
+        Computes and caches the O-planes of the orientifold: the cones of the orbifold toric fan whose torus orbits carry the O7-planes (O7 rays and non-divisorial O7 2-cones) and the O3-planes (see `fixed_locus`).
+
         **Returns:**
-    
-        - `list[tuple[int, ...]]`: The toric strata fixed by the orientifold action, as cones given by tuples of one-indexed ray labels.
-    
+
+        - `list[tuple[int, ...]]`: The O7 cones followed by the O3 cones, as tuples of one-indexed labels of `vectors_orbifold()`.
+
         """
         if self.__o_planes is None:
-            self.__o_planes = UF.Z2_fixed_locus(self.CY_ambient_toric_fan(),self.__xi)
+            fixed = self.fixed_locus()
+            self.__o_planes = [(int(r),) for r in fixed["O7_rays"]] + fixed["O7_two_cones"] + list(fixed["O3_cones"])
         return self.__o_planes
+
+    def fixed_locus(self, check: bool = True, return_chi: bool = False) -> dict:
+        """
+        **Description:**
+
+        Computes and caches the fixed locus of the orientifold involution with `UF.orientifold_fixed_locus`: the O7-planes with their Euler characteristics and the O3-planes.
+
+        **Arguments:**
+
+        - `check (bool)`: Whether to verify that the orientifold-invariant Calabi-Yau is smooth. Defaults to `True`.
+        - `return_chi (bool)`: Whether to also compute chi(B) and chi(X). Defaults to `False`.
+
+        **Raises:**
+
+        - `ValueError`: Raised by `UF.orientifold_fixed_locus`, e.g. if the orientifold-invariant Calabi-Yau is singular.
+
+        **Returns:**
+
+        - `dict`: The output of `UF.orientifold_fixed_locus`.
+
+        """
+        key = (check, return_chi)
+        if key not in self.__fixed_locus:
+            cached = self.__fixed_locus.get((check, True))
+            self.__fixed_locus[key] = cached if cached is not None else UF.orientifold_fixed_locus(self, check=check, return_chi=return_chi)
+        return self.__fixed_locus[key]
             
 
 class F_Theory_Uplift():
@@ -632,8 +691,10 @@ class F_Theory_Uplift():
         self.__h31 = None
         self.__h21 = None
         self.__chi = None
-        self.__c2 = None
-        self.__c3 = None
+        self.__c2_N = None
+        self.__c3_N = None
+        self.__c2_M = None
+        self.__c3_M = None
         self.__is_nef_partition = None
         self.__is_partition = None
         self.__is_nef_decomposition = None
@@ -764,6 +825,19 @@ class F_Theory_Uplift():
             self.__hodge_numbers = (UF.hodge_diamond_cy4 if V.shape[1] == 8 else UF.hodge_diamond_stringy)(V, backend)
         return self.__hodge_numbers
     
+    def is_trilayer_orientifold(self) -> bool:
+        """
+        **Description:**
+    
+        Returns whether the underlying orientifold is a trilayer orientifold, i.e. whether `polytope()` is trilayer and the orientifold action is the one defined by its trilayer vertex `v` (see `UF.find_trilayer_vertex`). Since the `Z_2` action defined by `xi/2` only depends on `xi` modulo 2, `xi` and `v` are compared modulo 2 (in particular, the default `xi=-v` inferred for trilayer polytopes is accepted).
+    
+        **Returns:**
+    
+        - `bool`: `True` if the orientifold is a trilayer orientifold, otherwise `False`.
+    
+        """
+        return self.orientifold().is_trilayer_orientifold()
+
     def is_nef_partition(self) -> bool | np.bool_:
         """
         **Description:**
@@ -1215,7 +1289,7 @@ class F_Theory_Uplift():
             return self.__intersecting_labels_W_M
         return self.pol_W_M().points()[self.__intersecting_labels_W_M]
 
-    def intersecting_divisors_M(self, as_labels: bool = False, toric_fan_adapted: bool = False) -> np.ndarray:
+    def intersecting_divisors_M(self, as_labels: bool = False) -> np.ndarray:
         """
         **Description:**
     
@@ -1242,10 +1316,7 @@ class F_Theory_Uplift():
         if as_labels:
             return self.__intersecting_labels_M
         else:
-            if toric_fan_adapted:
-                return np.vstack([self.intersecting_divisors_B_M(),self.intersecting_divisors_W_M()])
-            else:
-                return self.pol_M_conv().points()[self.__intersecting_labels_M]
+            return self.pol_M_conv().points()[self.__intersecting_labels_M]
             
     def intersecting_divisors_N(self, as_labels: bool = False) -> np.ndarray:
         """
@@ -1406,7 +1477,7 @@ class F_Theory_Uplift():
         """
         return int(self.hodge_numbers_CY()[3, 1])
 
-    def line_bundle_weierstrass_M(self, only_intersecting: bool = False) -> np.ndarray:
+    def line_bundle_weierstrass_M(self, only_intersecting: bool = False, toric_fan_adapted: bool = False) -> np.ndarray:
         """
         **Description:**
     
@@ -1432,11 +1503,13 @@ class F_Theory_Uplift():
                 self.__LBW_M = LB_W[1:]
         else:
             raise ValueError("Uplift is not a nef-partition")
+        if toric_fan_adapted:
+            return self.nef_partition_M(as_divisors=True,toric_fan_adapted=True)[1]
         if only_intersecting:
             return self.__LBW_M[self.intersecting_divisors_M(as_labels=True)-1]
         return self.__LBW_M
 
-    def line_bundle_base_M(self, only_intersecting: bool = False) -> np.ndarray:
+    def line_bundle_base_M(self, only_intersecting: bool = False, toric_fan_adapted: bool = False) -> np.ndarray:
         """
         **Description:**
     
@@ -1462,6 +1535,8 @@ class F_Theory_Uplift():
                 self.__LBB_M = LB_B[1:]
         else:
             raise ValueError("Uplift is not a nef-partition")
+        if toric_fan_adapted:
+            return self.nef_partition_M(as_divisors=True,toric_fan_adapted=True)[0]
         if only_intersecting:
             return self.__LBB_M[self.intersecting_divisors_M(as_labels=True)-1]
         return self.__LBB_M
@@ -1560,18 +1635,25 @@ class F_Theory_Uplift():
         """
         **Description:**
     
-        Sets the M-lattice toric fan.
-    
+        Sets the M-lattice toric fan. The fan is relabelled to the ray order of `vectors_M_conv_toric_fan()`, and all caches computed from the previous fan are cleared.
+
         **Arguments:**
-    
-        - `fan (Fan)`: The toric fan associated with the M-lattice convex hull.
-    
+
+        - `fan (Fan)`: The toric fan associated with the M-lattice convex hull. Its rays must be a reordering of `vectors_M_conv_toric_fan()`.
+
+        **Raises:**
+
+        - `ValueError`: Raised if the rays of `fan` are not a reordering of `vectors_M_conv_toric_fan()`.
+
         **Returns:**
-    
+
         - `None`
-    
+
         """
-        self.__M_conv_toric_fan = fan
+        self.__M_conv_toric_fan = UF.reorder_fan(fan,self.vectors_M_conv_toric_fan())
+        self.__intersection_numbers_M_conv = None
+        self.__basis_homology_M = None
+        self.__intersection_numbers_M = None
 
     def divisor_intersection_M(self, as_LLL: bool = True) -> np.ndarray:
         """
@@ -1594,7 +1676,8 @@ class F_Theory_Uplift():
         """
         if not self.is_nef_partition():
             raise ValueError("Uplift is not a nef-partition")
-        return(UF.divisor_intersections(fan=self.M_conv_toric_fan(),divisors=[self.line_bundle_base_M(),self.line_bundle_weierstrass_M()],intersection_dict=self.intersection_numbers_M_conv(),basis_set=set(self.basis_homology_M()),as_LLL=as_LLL))
+        LB1,LB2=self.nef_partition_M(as_divisors=True,toric_fan_adapted=True)
+        return(UF.divisor_intersections(fan=self.M_conv_toric_fan(),divisors=[LB1,LB2],intersection_dict=self.intersection_numbers_M_conv(),basis_set=set(self.basis_homology_M()),as_LLL=as_LLL))
 
     def divisor_intersection_N(self, as_LLL: bool = True) -> np.ndarray:
         """
@@ -1827,16 +1910,15 @@ class F_Theory_Uplift():
         if not self.is_nef_decomposition():
             raise ValueError("Euler number can only be computed for a nef-decomposition")
         if self.__chi is None:
-            if self.__hodge_numbers is None:
-                chi_loc = UF.toric_chern_class(self.smooth_uplift_ambient_toric_fan(), [self.line_bundle_base_N(),self.line_bundle_weierstrass_N()], 4)
-                nO3=UF.three_cone_intersections(self.polytope().dual(),self.CY_ambient_toric_fan(),UF.Z2_fixed_locus(self.CY_ambient_toric_fan(),self.xi(),3))
-                self.__chi = chi_loc+6*nO3
-            else:
-                h = self.__hodge_numbers
-                self.__chi = int((h * (-1) ** np.add.outer(np.arange(len(h)), np.arange(len(h)))).sum())
+            # if self.__hodge_numbers is None:
+            #     chi_loc = UF.toric_chern_class(self.smooth_uplift_ambient_toric_fan(), [self.line_bundle_base_N(),self.line_bundle_weierstrass_N()], 4)
+            #     nO3=UF.three_cone_intersections(self.polytope().dual(),self.CY_ambient_toric_fan(),UF.Z2_fixed_locus(self.CY_ambient_toric_fan(),self.xi(),3))
+            #     self.__chi = chi_loc+6*nO3
+            h = self.hodge_numbers_CY()
+            self.__chi = int((h * (-1) ** np.add.outer(np.arange(len(h)), np.arange(len(h)))).sum())
         return self.__chi
     
-    def c2(self) -> dict[tuple[np.integer, ...], int]:
+    def c2_N(self) -> dict[tuple[np.integer, ...], int]:
         """
         **Description:**
     
@@ -1853,11 +1935,11 @@ class F_Theory_Uplift():
         """
         if not self.is_nef_decomposition():
             raise ValueError("Second Chern class can only be computed for a nef-decomposition")
-        if self.__c2 is None:
-            self.__c2 = UF.toric_chern_class(self.smooth_uplift_ambient_toric_fan(), [self.line_bundle_base_N(),self.line_bundle_weierstrass_N()], 2)
-        return self.__c2
+        if self.__c2_N is None:
+            self.__c2_N = UF.toric_chern_class(self.smooth_uplift_ambient_toric_fan(), [self.line_bundle_base_N(),self.line_bundle_weierstrass_N()], 2)
+        return self.__c2_N
 
-    def c3(self) -> dict[np.integer, int]:
+    def c3_N(self) -> dict[np.integer, int]:
         """
         **Description:**
     
@@ -1874,9 +1956,47 @@ class F_Theory_Uplift():
         """
         if not self.is_nef_decomposition():
             raise ValueError("Third Chern class can only be computed for a nef-decomposition")
-        if self.__c3 is None:
-            self.__c3 = UF.toric_chern_class(self.smooth_uplift_ambient_toric_fan(), [self.line_bundle_base_N(),self.line_bundle_weierstrass_N()], 3)
-        return self.__c3
+        if self.__c3_N is None:
+            self.__c3_N = UF.toric_chern_class(self.smooth_uplift_ambient_toric_fan(), [self.line_bundle_base_N(),self.line_bundle_weierstrass_N()], 3)
+        return self.__c3_N
+
+    def c2_M(self) -> dict[tuple[np.integer, ...], int]:
+        """
+        **Description:**
+    
+        Computes and caches the second Chern class of the Calabi-Yau fourfold, the complete intersection of the base and Weierstrass divisors in the resolved uplift ambient toric fan, by toric localization (`UF.toric_chern_class` with `n=2`).
+    
+        **Raises:**
+    
+        - `ValueError`: Raised if the uplift is not a nef decomposition.
+    
+        **Returns:**
+    
+        - `dict[tuple[np.integer, ...], int]`: The components of `c_2` as `{(i, j): value}` with sorted one-indexed prime toric divisor labels `i <= j` (NumPy integers); vanishing entries are omitted.
+    
+        """
+        if self.__c2_M is None:
+            self.__c2_M = UF.toric_chern_class(self.M_conv_toric_fan(), self.nef_partition_M(as_divisors=True,toric_fan_adapted=True), 2)
+        return self.__c2_M
+
+    def c3_M(self) -> dict[np.integer, int]:
+        """
+        **Description:**
+    
+        Computes and caches the third Chern class of the Calabi-Yau fourfold, the complete intersection of the base and Weierstrass divisors in the resolved uplift ambient toric fan, by toric localization (`UF.toric_chern_class` with `n=3`).
+    
+        **Raises:**
+    
+        - `ValueError`: Raised if the uplift is not a nef decomposition.
+    
+        **Returns:**
+    
+        - `dict[np.integer, int]`: The components of `c_3` as `{i: value}` with one-indexed prime toric divisor labels `i` (NumPy integers); vanishing entries are omitted.
+    
+        """
+        if self.__c3_M is None:
+            self.__c3_M = UF.toric_chern_class(self.M_conv_toric_fan(), self.nef_partition_M(as_divisors=True,toric_fan_adapted=True), 3)
+        return self.__c3_M
 
     def is_regular(self) -> bool:
         """
@@ -1904,6 +2024,9 @@ class F_Theory_Uplift():
         """
         return self.orientifold().normal_fan()
     
+    def h_prime_is_lattice(self):
+        return self.orientifold().h_prime_is_lattice()
+
     def basis_homology_M(self, as_LLL: bool = True) -> np.ndarray:
         """
         **Description:**
@@ -1965,7 +2088,7 @@ class F_Theory_Uplift():
         else:
             return ((),())
 
-    def nef_partition_M(self,toric_fan_adapted: bool=False,zero_based: bool=False,as_divisors: bool=False) -> tuple[tuple[np.integer, ...], tuple[np.integer, ...]] | tuple[np.ndarray, np.ndarray] | list[np.ndarray]:
+    def nef_partition_M(self,toric_fan_adapted: bool=True,zero_based: bool=False,as_divisors: bool=False) -> tuple[tuple[np.integer, ...], tuple[np.integer, ...]] | tuple[np.ndarray, np.ndarray] | list[np.ndarray]:
         """
         **Description:**
     
@@ -1998,10 +2121,14 @@ class F_Theory_Uplift():
                     else:
                         return inds
             else:
-                if zero_based:
-                    return (tuple(np.where(self.line_bundle_base_M()==1)[0]),tuple(np.where(self.line_bundle_weierstrass_M()==1)[0]))
+                if as_divisors:
+                    return [self.line_bundle_base_M(),self.line_bundle_weierstrass_M()]
                 else:
-                    return (tuple(np.where(self.line_bundle_base_M()==1)[0]+1),tuple(np.where(self.line_bundle_weierstrass_M()==1)[0]+1))
+                    inds=[np.where(self.line_bundle_base_M()==1)[0],np.where(self.line_bundle_weierstrass_M()==1)[0]]
+                    if zero_based:
+                        return inds
+                    else:
+                        return [inds[0]+1,inds[1]+1]
         else:
             return ((),())
 
