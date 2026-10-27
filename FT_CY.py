@@ -687,6 +687,7 @@ class F_Theory_Uplift():
         self.x = None
         self.y = None
         self.z = None
+        self.u = None
         self.__h11 = None
         self.__h31 = None
         self.__h21 = None
@@ -695,8 +696,8 @@ class F_Theory_Uplift():
         self.__c3_N = None
         self.__c2_M = None
         self.__c3_M = None
-        self.__is_nef_partition = None
-        self.__is_partition = None
+        # self.__is_nef_partition = None
+        # self.__is_partition = None
         self.__is_nef_decomposition = None
         self.__CY_orientifold = None
         self.__intersection_numbers_N=None
@@ -707,10 +708,9 @@ class F_Theory_Uplift():
                 self.__CY_orientifold = orientifold_or_points
             case object():
                 self.__CY_orientifold = CY_orientifold(orientifold_or_points, xi=xi, resolve_A1_singularities=resolve_A1_singularities, construct_nef_decomposition=construct_nef_decomposition)
-
-        if not self.is_regular():
-            self.__is_partition=False
-            self.__is_nef_partition=False
+        # if not self.is_regular():
+        #     self.__is_partition=False
+        #     self.__is_nef_partition=False
 
     def __set_divisor_representations(self) -> None:
         """
@@ -1146,6 +1146,9 @@ class F_Theory_Uplift():
             self.x = np.concatenate((np.zeros(self.ambient_dim_base(), dtype=int), np.array([3, 1])))
             self.y = np.concatenate((np.zeros(self.ambient_dim_base(), dtype=int), np.array([-2, -1])))
             self.z = np.concatenate((np.zeros(self.ambient_dim_base(), dtype=int), np.array([0, 1])))
+            u=np.zeros(len(self.x),dtype=int)
+            u[-2]=1
+            self.u=u
             coordinates231 = (1 - self.line_bundle_orbifold())[:, None] @ self.z[-2:][None, :]
             pts6 = np.concatenate((self.vectors_orbifold(), coordinates231), axis=1)
             pts6 = np.concatenate((pts6, np.array([self.x, self.y, self.z])), axis=0)
@@ -1621,12 +1624,16 @@ class F_Theory_Uplift():
         """
         if not self.is_nef_partition():
             raise ValueError("Uplift is not a nef-partition")
+        if not self.h_prime_is_lattice():
+            warnings.warn("h'' is not a lattice this fan may not yield a fibration over P1")
         if self.__M_conv_toric_fan is None:
             nf=UF.face_fan(self.pol_M_conv(),simplicial=True)
+            gen_fiber_rays=self.vectors_M_conv_toric_fan()[np.where(self.vectors_M_conv_toric_fan()@self.u==0)[0]]
             # nint=UF.row_difference(nf.vectors(),self.intersecting_divisors_M(toric_fan_adapted=True))
             # if len(nint)>0:
             #     nf=UF.contract_rays(nf,nf.vc.vectors_to_labels(nint))
-            newf=UF.refine_fan(nf,self.vectors_M_conv_toric_fan())
+            newf=UF.refine_fan(nf,gen_fiber_rays)
+            newf=UF.refine_fan(newf,self.vectors_M_conv_toric_fan())
             self.__M_conv_toric_fan=UF.reorder_fan(newf,self.vectors_M_conv_toric_fan())
             # self.__M_conv_toric_fan = VectorConfiguration(np.vstack([self.intersecting_divisors_B_M(),self.intersecting_divisors_W_M()])).triangulate()
         return self.__M_conv_toric_fan
@@ -2168,7 +2175,7 @@ class F_Theory_Uplift():
         """
         **Description:**
     
-        Computes and caches the intersection numbers of the Calabi-Yau fourfold cut out by the base and Weierstrass divisors in the resolved uplift ambient toric fan, expressed in the divisor basis `basis_homology_N()` (via `UF.cy_intersection_numbers`).
+        Computes and caches the intersection numbers of the Calabi-Yau fourfold cut out by the base and Weierstrass divisors in the resolved uplift ambient toric fan, expressed in the divisor basis `basis_homology_N()` (via `UF.subvariety_intersection_numbers`).
     
         **Returns:**
     
@@ -2176,19 +2183,19 @@ class F_Theory_Uplift():
     
         """
         if self.__intersection_numbers_N is None:
-            self.__intersection_numbers_N=UF.cy_intersection_numbers(self.smooth_uplift_ambient_toric_fan(),[self.line_bundle_base_N(),self.line_bundle_weierstrass_N()],self.basis_homology_N())
+            self.__intersection_numbers_N=UF.subvariety_intersection_numbers(self.smooth_uplift_ambient_toric_fan(),[self.line_bundle_base_N(),self.line_bundle_weierstrass_N()],self.basis_homology_N())
         return self.__intersection_numbers_N
 
     def intersection_numbers_M(self,tol: float = 1e-5,decimals: int = 10) -> dict[tuple[int, ...], float]:
         """
         **Description:**
     
-        Computes and caches the intersection numbers of the Calabi-Yau fourfold cut out by the two nef-partition divisors in the M-lattice toric fan `M_conv_toric_fan()`, expressed in the divisor basis `basis_homology_M()` (via `UF.cy_intersection_numbers`). The values `tol` and `decimals` only matter on the first call.
+        Computes and caches the intersection numbers of the Calabi-Yau fourfold cut out by the two nef-partition divisors in the M-lattice toric fan `M_conv_toric_fan()`, expressed in the divisor basis `basis_homology_M()` (via `UF.subvariety_intersection_numbers`). The values `tol` and `decimals` only matter on the first call.
     
         **Arguments:**
     
-        - `tol (float)`: Numerical tolerance passed to `UF.cy_intersection_numbers`. Defaults to `1e-5`.
-        - `decimals (int)`: Number of decimals used for rounding in `UF.cy_intersection_numbers`. Defaults to `10`.
+        - `tol (float)`: Numerical tolerance passed to `UF.subvariety_intersection_numbers`. Defaults to `1e-5`.
+        - `decimals (int)`: Number of decimals used for rounding in `UF.subvariety_intersection_numbers`. Defaults to `10`.
     
         **Raises:**
     
@@ -2203,7 +2210,7 @@ class F_Theory_Uplift():
             raise ValueError("Intersection numbers on the M side can only be computed for nef partitions")
         if self.__intersection_numbers_M is None:
             LB1,LB2=self.nef_partition_M(as_divisors=True,toric_fan_adapted=True)
-            self.__intersection_numbers_M=UF.cy_intersection_numbers(self.M_conv_toric_fan(),[LB1,LB2],self.basis_homology_M(),tol=tol,decimals=decimals)
+            self.__intersection_numbers_M=UF.subvariety_intersection_numbers(self.M_conv_toric_fan(),[LB1,LB2],self.basis_homology_M(),tol=tol,decimals=decimals)
         return self.__intersection_numbers_M
 
 def fetch_orientifolds(only_regular: bool=True, only_nef_decomposition: bool=False,h11: int | None = None,h12: int | None = None,h13: int | None = None,

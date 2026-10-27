@@ -5196,24 +5196,23 @@ def toric_chern_class(fan: Fan,divisors: ArrayLike,n: int)->int|dict[tuple[int,.
 #         raise ValueError("Ambient toric variety must be 6-dimensional.")
 #     return toric_chern_class(fan,divisors,n)
 
-def cy_intersection_numbers(fan: Fan,divisors: Sequence[ArrayLike]|None=None,basis: ArrayLike|None=None,Q: ArrayLike|None=None,in_basis: bool=False,tol: float|None=1e-5,decimals: int=10)->dict[tuple[int,...],int|float]:
+def subvariety_intersection_numbers(fan: Fan,divisors: Sequence[ArrayLike]|None=None,basis: ArrayLike|None=None,Q: ArrayLike|None=None,in_basis: bool=False,tol: float|None=1e-5,decimals: int=10)->dict[tuple[int,...],int|float]:
     """
     **Description:**
-    Intersection numbers of the complete intersection of `divisors` in the toric variety of `fan`, in terms of all prime toric divisors, of a prime toric basis, or of a GLSM basis (see `cy_intersection_numbers_all_prime_torics` and `tensor_symm_in_basis`).
+    Intersection numbers of the restricted toric divisors on the complete intersection X = D^(1) ∩ ... ∩ D^(r) of `divisors` in the toric variety of `fan`, in terms of all prime toric divisors, of a prime toric basis, or of a GLSM basis (see `_subvariety_intersection_numbers_all_prime_torics` and `tensor_symm_in_basis`).
+    No Calabi-Yau condition is assumed: the result is the ambient intersection product with the class D^(1)...D^(r), which gives the intersection numbers of X whenever X is a transverse complete intersection (e.g. for generic sections of base-point-free divisors).
     **Arguments:**
     - `fan (Fan)`: The toric fan of the ambient variety.
-    - `divisors (Sequence[ArrayLike])`: Coefficient vectors of the divisors cutting out the CY, ordered by ray label.
+    - `divisors (Sequence[ArrayLike]|None)`: Coefficient vectors of the divisors cutting out X, ordered by ray label. If `None`, the anticanonical hypersurface is used. Defaults to `None`.
     - `basis (ArrayLike|None)`: One-indexed labels of the prime toric basis divisors. If `None` and `in_basis` is `True` or `Q` is given, `basis_H2_toric_fan(fan)` is used. Defaults to `None`.
     - `Q (ArrayLike|None)`: GLSM charge matrix; if given, the result is expressed in the GLSM basis. Defaults to `None`.
     - `in_basis (bool)`: Whether to express the result in a prime toric basis. Defaults to `False`.
-    - `tol (float|None)`: Rounding tolerance, see `cy_intersection_numbers_all_prime_torics`. Defaults to `1e-5`.
+    - `tol (float|None)`: Rounding tolerance, see `_subvariety_intersection_numbers_all_prime_torics`. Defaults to `1e-5`.
     - `decimals (int)`: Number of decimals to round to. Defaults to `10`.
     **Returns:**
     - `dict[tuple[int,...],int|float]`: The intersection numbers keyed by sorted one-indexed label tuples (prime torics, basis positions or GLSM indices); absent keys are zero.
     """
-    if divisors is None:
-        divisors=[np.ones(len(fan.vectors(),dtype=int))]
-    out=_cy_intersection_numbers_all_prime_torics(fan,divisors,tol=tol,decimals=decimals)
+    out=_subvariety_intersection_numbers_all_prime_torics(fan,divisors,tol=tol,decimals=decimals)
     if in_basis or Q is not None:
         if basis is None:
             basis=basis_H2_toric_fan(fan)
@@ -5221,16 +5220,17 @@ def cy_intersection_numbers(fan: Fan,divisors: Sequence[ArrayLike]|None=None,bas
         return tensor_symm_in_basis(out,basis,Q,in_prime_basis=False)
     return out
 
-def _cy_intersection_numbers_all_prime_torics(fan: Fan,divisors: Sequence[ArrayLike]|None=None,tol: float|None=1e-5,decimals: int=10)->dict[tuple[int,...],float]:
+def _subvariety_intersection_numbers_all_prime_torics(fan: Fan,divisors: Sequence[ArrayLike]|None=None,tol: float|None=1e-5,decimals: int=10)->dict[tuple[int,...],float]:
     """
     **Description:**
-    Intersection numbers of the complete intersection X = D^(1) ∩ ... ∩ D^(r)
-    in terms of all prime toric divisors:
+    Intersection numbers of the restricted prime toric divisors on the complete intersection X = D^(1) ∩ ... ∩ D^(r)
+    (of any dimension d = dim(fan) - r, no Calabi-Yau condition assumed), via the ambient intersection numbers K:
         kappa_{a_1..a_d} = sum_{i_1..i_r} c^(1)_{i_1} ... c^(r)_{i_r} K_{i_1..i_r a_1..a_d}
     **Arguments:**
     - `fan (Fan)`: CYTools Fan. Ray labels 1,...,N; fan.intersection_numbers() returns {sorted tuple: value},
         where label 0 is the canonical divisor (ignored here).
-    - `divisors (Sequence[ArrayLike])`: Coefficients of D^(k) = sum_i c^(k)_i D_i, each of shape (N,), ordered by label 1,...,N.
+    - `divisors (Sequence[ArrayLike]|None)`: Coefficients of D^(k) = sum_i c^(k)_i D_i, each of shape (N,), ordered by label 1,...,N.
+        If `None`, the anticanonical hypersurface (all c_i = 1) is used. Defaults to `None`.
     - `tol (float|None)`: If given, drop entries with |value| <= tol and round to `decimals` (values within `tol` of an integer are rounded to it). Defaults to `1e-5`.
     - `decimals (int)`: Number of decimals to round to. Defaults to `10`.
     **Returns:**
@@ -6053,7 +6053,7 @@ def fix_tau_row(Q,IN,d7_rows,invariant_rows=None,tol=1e-4,decimals=10):
     - `d7_rows (Sequence[int])`: 0-based indices of the D7 rows.
     - `invariant_rows (Sequence[int]|None)`: 0-based rows with Weyl-invariant flat coordinates. Defaults to all rows except `d7_rows` and the last.
     - `tol (float)`: New entries are rounded to `decimals`, values within `tol` of an integer are set to it, and entries with |value| <= tol are dropped
-      (as in `cy_intersection_numbers`); near-integral values are returned as int. Defaults to `1e-5`.
+      (as in `subvariety_intersection_numbers`); near-integral values are returned as int. Defaults to `1e-5`.
     - `decimals (int)`: Number of decimals to round to. Defaults to `10`.
     **Returns:**
     - `tuple`: (Q_new, IN_new, k, n, free) with IN_new values int (near-integral) or float, n a float array, free an integer basis (rows) of the shifts of n not fixed by the
