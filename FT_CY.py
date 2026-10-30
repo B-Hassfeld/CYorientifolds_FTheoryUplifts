@@ -116,7 +116,7 @@ class CY_orientifold():
                 self.__p = fan_polytope_or_points
                 self._original_verts=fan_polytope_or_points.vertices()
                 if fan_polytope_or_points.is_reflexive():
-                    pts=fan_polytope_or_points.points_not_interior_to_facets()[1:]
+                    pts=fan_polytope_or_points.points()[1:]
                 else:
                     ind = UF.get_index(fan_polytope_or_points.points(), np.zeros(len(fan_polytope_or_points.vertices()[0])))
                     if len(ind) > 0:
@@ -166,7 +166,8 @@ class CY_orientifold():
                         if orbifold_pts_refined is not None:
                             self.__yields_nef_decomposition = True
                             self.__normal_fan = normal_fan
-                            inds=UF.intersecting_points(orbifold_pts_refined,polytopes=[NP_orbifold],as_indices=True)
+                            # the rays of the unrefined normal fan (the first rows) alone cut out both Newton polytopes, so all other non-intersecting rays can be dropped
+                            inds=np.union1d(UF.intersecting_points(orbifold_pts_refined,polytopes=[NP_orbifold],as_indices=True),np.arange(len(normal_fan.vectors())))
                             orbifold_pts_refined=orbifold_pts_refined[inds]
                             line_bundles=line_bundles[inds]
                             Lambda_inv=np.linalg.inv(Lambda)
@@ -696,6 +697,7 @@ class F_Theory_Uplift():
         self.__c3_N = None
         self.__c2_M = None
         self.__c3_M = None
+        self.__blow_down_fan = None
         # self.__is_nef_partition = None
         # self.__is_partition = None
         self.__is_nef_decomposition = None
@@ -708,9 +710,13 @@ class F_Theory_Uplift():
                 self.__CY_orientifold = orientifold_or_points
             case object():
                 self.__CY_orientifold = CY_orientifold(orientifold_or_points, xi=xi, resolve_A1_singularities=resolve_A1_singularities, construct_nef_decomposition=construct_nef_decomposition)
-        # if not self.is_regular():
-        #     self.__is_partition=False
-        #     self.__is_nef_partition=False
+        self.x=np.zeros(self.ambient_dim_base()+2,dtype=int)
+        self.y=self.x.copy()
+        self.z=self.x.copy()
+        self.x[-2:]=[3,1]
+        self.y[-2:]=[-2,-1]
+        self.z[-2:]=[0,1]
+        self.u=self.x+self.y
 
     def __set_divisor_representations(self) -> None:
         """
@@ -1143,12 +1149,6 @@ class F_Theory_Uplift():
     
         """
         if self.__pts_singular_uplift is None:
-            self.x = np.concatenate((np.zeros(self.ambient_dim_base(), dtype=int), np.array([3, 1])))
-            self.y = np.concatenate((np.zeros(self.ambient_dim_base(), dtype=int), np.array([-2, -1])))
-            self.z = np.concatenate((np.zeros(self.ambient_dim_base(), dtype=int), np.array([0, 1])))
-            u=np.zeros(len(self.x),dtype=int)
-            u[-2]=1
-            self.u=u
             coordinates231 = (1 - self.line_bundle_orbifold())[:, None] @ self.z[-2:][None, :]
             pts6 = np.concatenate((self.vectors_orbifold(), coordinates231), axis=1)
             pts6 = np.concatenate((pts6, np.array([self.x, self.y, self.z])), axis=0)
@@ -1348,22 +1348,43 @@ class F_Theory_Uplift():
             return self.__intersecting_labels_N
         else:
             return self.vectors_smooth_uplift_ambient()[self.__intersecting_labels_N-1]
-    
+
+    def _missing_points(self):
+        zero_inters=[]
+        l1=self.pol_M_conv().vertices()[self.pol_M_conv().vertices()@self.u==-1]
+        l2=self.pol_M_conv().vertices()[self.pol_M_conv().vertices()@self.u==-2]
+        points0=self.intersecting_divisors_M()[self.intersecting_divisors_M()@self.u==0]
+        pos_point=self.intersecting_divisors_M()[self.intersecting_divisors_M()@self.u>0][0]
+        p1s=np.rint(l1/2+pos_point/2).astype(int)
+        p2s=np.rint(l2/3+2*pos_point/3).astype(int)
+        miss=np.unique(UF.row_difference(np.concatenate((p1s,p2s),axis=0),points0),axis=0)
+        if len(miss)>0:
+            zero_ind=UF.get_index(miss,np.zeros(miss.shape[1],dtype=int))
+            if len(zero_ind)>0:
+                miss=np.delete(miss,zero_ind[0],0)
+        return miss
+
     def vectors_M_conv_toric_fan(self):
         if self.__vectors_M_conv_toric_fan is None:
-            vertsB=UF.get_same_rows(self.pol_M_conv().vertices(),self.pol_B_M().vertices())
-            vertsW=UF.get_same_rows(self.pol_M_conv().vertices(),self.pol_W_M().vertices())
-            self.__vertices_B_not_intersecting=UF.row_difference(vertsB,self.intersecting_divisors_B_M())
-            self.__vertices_W_not_intersecting=UF.row_difference(vertsW,self.intersecting_divisors_W_M())
-            if len(self.__vertices_B_not_intersecting)>0:
-                ptsB=np.vstack([self.__vertices_B_not_intersecting,self.intersecting_divisors_B_M()])
+            int_vecs=np.vstack([self.intersecting_divisors_B_M(),self.intersecting_divisors_W_M()])
+            vert_diff=UF.row_difference(self.pol_M_conv().vertices(),int_vecs)
+            if self.h_prime_is_lattice():
+                self.__vectors_M_conv_toric_fan=np.vstack([int_vecs,vert_diff,self._missing_points()])
             else:
-                ptsB=self.intersecting_divisors_B_M()
-            if len(self.__vertices_W_not_intersecting)>0:
-                ptsW=np.vstack([self.intersecting_divisors_W_M(),self.__vertices_W_not_intersecting])
-            else:
-                ptsW=self.intersecting_divisors_W_M()
-            self.__vectors_M_conv_toric_fan = np.vstack([ptsB,ptsW])
+                self.__vectors_M_conv_toric_fan=np.vstack([int_vecs,vert_diff])
+            # vertsB=UF.get_same_rows(self.pol_M_conv().vertices(),self.pol_B_M().vertices())
+            # vertsW=UF.get_same_rows(self.pol_M_conv().vertices(),self.pol_W_M().vertices())
+            # self.__vertices_B_not_intersecting=UF.row_difference(vertsB,self.intersecting_divisors_B_M())
+            # self.__vertices_W_not_intersecting=UF.row_difference(vertsW,self.intersecting_divisors_W_M())
+            # if len(self.__vertices_B_not_intersecting)>0:
+            #     ptsB=np.vstack([self.__vertices_B_not_intersecting,self.intersecting_divisors_B_M()])
+            # else:
+            #     ptsB=self.intersecting_divisors_B_M()
+            # if len(self.__vertices_W_not_intersecting)>0:
+            #     ptsW=np.vstack([self.intersecting_divisors_W_M(),self.__vertices_W_not_intersecting])
+            # else:
+            #     ptsW=self.intersecting_divisors_W_M()
+            # self.__vectors_M_conv_toric_fan = np.vstack([ptsB,ptsW])
         return self.__vectors_M_conv_toric_fan
 
     def vertices_B_not_intersecting(self):
@@ -1627,16 +1648,44 @@ class F_Theory_Uplift():
         if not self.h_prime_is_lattice():
             warnings.warn("h'' is not a lattice this fan may not yield a fibration over P1")
         if self.__M_conv_toric_fan is None:
-            nf=UF.face_fan(self.pol_M_conv(),simplicial=True)
-            gen_fiber_rays=self.vectors_M_conv_toric_fan()[np.where(self.vectors_M_conv_toric_fan()@self.u==0)[0]]
-            # nint=UF.row_difference(nf.vectors(),self.intersecting_divisors_M(toric_fan_adapted=True))
-            # if len(nint)>0:
-            #     nf=UF.contract_rays(nf,nf.vc.vectors_to_labels(nint))
-            newf=UF.refine_fan(nf,gen_fiber_rays)
-            newf=UF.refine_fan(newf,self.vectors_M_conv_toric_fan())
-            self.__M_conv_toric_fan=UF.reorder_fan(newf,self.vectors_M_conv_toric_fan())
+            if self.h_prime_is_lattice():
+                f_common_ref=UF.common_fan_refinement(self.blow_down_fan(),UF.face_fan(self.pol_M_conv()),simplicial=True,vectors_fine_to_add=self.vectors_M_conv_toric_fan())
+                newf=UF.refine_fan(f_common_ref,self.vectors_M_conv_toric_fan())
+                self.__M_conv_toric_fan=UF.reorder_fan(newf,self.vectors_M_conv_toric_fan())
+            else:
+                self.__M_conv_toric_fan=UF.refine_fan(UF.face_fan(self.pol_M_conv(),simplicial=True),self.vectors_M_conv_toric_fan())
+            # nf=UF.face_fan(self.pol_M_conv(),simplicial=True)
+            # gen_fiber_rays=self.vectors_M_conv_toric_fan()[np.where(self.vectors_M_conv_toric_fan()@self.u==0)[0]]
+            # newf=UF.refine_fan(nf,gen_fiber_rays)
+            # newf=UF.refine_fan(newf,self.vectors_M_conv_toric_fan())
+            # self.__M_conv_toric_fan=UF.reorder_fan(newf,self.vectors_M_conv_toric_fan())
             # self.__M_conv_toric_fan = VectorConfiguration(np.vstack([self.intersecting_divisors_B_M(),self.intersecting_divisors_W_M()])).triangulate()
         return self.__M_conv_toric_fan
+
+    def blow_down_fan(self) -> Fan:
+        """
+        Returns the blow down fan of the convex hull polytope. 
+
+        """ 
+        if not self.h_prime_is_lattice():
+            raise ValueError("h' is not a lattice this fan may not yield a fibration over P1")
+        if self.__blow_down_fan is None:
+            fiber_points=self.vectors_M_conv_toric_fan()[self.vectors_M_conv_toric_fan()@self.u==0]
+            fiber_points_projected=UF.project_points(fiber_points,self.u)
+            # fiber_points=np.concatenate((self.intersecting_divisors_M()[self.intersecting_divisors_M()@self.u==0],self._missing_points()),axis=0)
+            f_fib=UF.face_fan(Polytope(fiber_points_projected),simplicial=True)
+            f_fib=UF.reorder_fan(UF.refine_fan(f_fib,fiber_points_projected),fiber_points_projected)
+            rhos=np.zeros((2,self.ambient_dim_base()+2),dtype=int)
+            rhos[:,-2:]=np.array([[1,-1],[-2,5]])
+            vc_bd=VectorConfiguration(np.concatenate((fiber_points,rhos),axis=0))
+            indp=len(fiber_points)+1
+            indm=indp+1
+            cones_bd=set()
+            for c in f_fib.cones():
+                cones_bd.add(c+(indp,))
+                cones_bd.add(c+(indm,))
+            self.__blow_down_fan=Fan(vc_bd,cones=cones_bd)
+        return self.__blow_down_fan
 
     def set_M_conv_toric_fan(self,fan: Fan) -> None:
         """
