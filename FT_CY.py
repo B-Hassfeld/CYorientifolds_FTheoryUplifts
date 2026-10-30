@@ -675,7 +675,6 @@ class F_Theory_Uplift():
         self.__LBB_N = None
         self.__LBW_M = None
         self.__LBB_M = None
-        self.__vectors_M_conv_toric_fan = None
         self.__basis_homology_M = None
         self.__basis_homology_N = None
         self.__normal_fan = None
@@ -698,6 +697,8 @@ class F_Theory_Uplift():
         self.__c2_M = None
         self.__c3_M = None
         self.__blow_down_fan = None
+        self.__labels_M_conv_toric_fan = None
+        self.__vectors_M_conv_toric_fan = None
         # self.__is_nef_partition = None
         # self.__is_partition = None
         self.__is_nef_decomposition = None
@@ -1364,14 +1365,18 @@ class F_Theory_Uplift():
                 miss=np.delete(miss,zero_ind[0],0)
         return miss
 
-    def vectors_M_conv_toric_fan(self):
+    def vectors_M_conv_toric_fan(self,as_labels=False):
+        if not self.is_nef_partition():
+            raise ValueError("Vectors M-conv can only be computed for nef partitions")
         if self.__vectors_M_conv_toric_fan is None:
             int_vecs=np.vstack([self.intersecting_divisors_B_M(),self.intersecting_divisors_W_M()])
             vert_diff=UF.row_difference(self.pol_M_conv().vertices(),int_vecs)
             if self.h_prime_is_lattice():
-                self.__vectors_M_conv_toric_fan=np.vstack([int_vecs,vert_diff,self._missing_points()])
+                all_points=np.vstack([int_vecs,vert_diff,self._missing_points()])
             else:
-                self.__vectors_M_conv_toric_fan=np.vstack([int_vecs,vert_diff])
+                all_points=np.vstack([int_vecs,vert_diff])
+            self.__labels_M_conv_toric_fan=np.array(self.pol_M_conv().points_to_indices(all_points))
+            self.__vectors_M_conv_toric_fan=all_points
             # vertsB=UF.get_same_rows(self.pol_M_conv().vertices(),self.pol_B_M().vertices())
             # vertsW=UF.get_same_rows(self.pol_M_conv().vertices(),self.pol_W_M().vertices())
             # self.__vertices_B_not_intersecting=UF.row_difference(vertsB,self.intersecting_divisors_B_M())
@@ -1385,6 +1390,8 @@ class F_Theory_Uplift():
             # else:
             #     ptsW=self.intersecting_divisors_W_M()
             # self.__vectors_M_conv_toric_fan = np.vstack([ptsB,ptsW])
+        if as_labels:
+            return self.__labels_M_conv_toric_fan
         return self.__vectors_M_conv_toric_fan
 
     def vertices_B_not_intersecting(self):
@@ -1528,7 +1535,7 @@ class F_Theory_Uplift():
         else:
             raise ValueError("Uplift is not a nef-partition")
         if toric_fan_adapted:
-            return self.nef_partition_M(as_divisors=True,toric_fan_adapted=True)[1]
+            return self.__LBW_M[self.vectors_M_conv_toric_fan(as_labels=True)-1]
         if only_intersecting:
             return self.__LBW_M[self.intersecting_divisors_M(as_labels=True)-1]
         return self.__LBW_M
@@ -1560,7 +1567,7 @@ class F_Theory_Uplift():
         else:
             raise ValueError("Uplift is not a nef-partition")
         if toric_fan_adapted:
-            return self.nef_partition_M(as_divisors=True,toric_fan_adapted=True)[0]
+            return self.__LBB_M[self.vectors_M_conv_toric_fan(as_labels=True)-1]
         if only_intersecting:
             return self.__LBB_M[self.intersecting_divisors_M(as_labels=True)-1]
         return self.__LBB_M
@@ -2163,19 +2170,15 @@ class F_Theory_Uplift():
         """
         if self.is_nef_partition():
             if toric_fan_adapted:
-                n_bulk=len(self.intersecting_divisors_B_M(as_labels=True))+len(self.vertices_B_not_intersecting())
-                inds=[np.arange(1,n_bulk+1),np.arange(n_bulk+1,len(self.vectors_M_conv_toric_fan())+1)]
                 if as_divisors:
-                    LB1=np.zeros(len(self.vectors_M_conv_toric_fan()),dtype=int)
-                    LB2=LB1.copy()
-                    LB1[inds[0]-1]=1
-                    LB2[inds[1]-1]=1
-                    return (LB1,LB2)
+                    return [self.line_bundle_base_M(toric_fan_adapted=True),self.line_bundle_weierstrass_M(toric_fan_adapted=True)]
                 else:
+                    part1=np.where(self.line_bundle_base_M(toric_fan_adapted=True)==1)[0]
+                    part2=np.where(self.line_bundle_weierstrass_M(toric_fan_adapted=True)==1)[0]
                     if zero_based:
-                        return (inds[0]-1,inds[1]-1)
+                        return [part1,part2]
                     else:
-                        return inds
+                        return [part1+1,part2+1]
             else:
                 if as_divisors:
                     return [self.line_bundle_base_M(),self.line_bundle_weierstrass_M()]
@@ -2186,7 +2189,7 @@ class F_Theory_Uplift():
                     else:
                         return [inds[0]+1,inds[1]+1]
         else:
-            return ((),())
+            return [(),()]
 
     
     def is_nef_decomposition(self) -> bool | np.bool_:

@@ -37,7 +37,7 @@ import subprocess
 import re
 from pathlib import Path
 from flint import fmpz_mat
-from sympy import Matrix
+from sympy import Matrix, factorint
 from sympy.matrices.normalforms import smith_normal_decomp
 from scipy.optimize import nnls
 from scipy.linalg import schur, qr
@@ -6605,71 +6605,63 @@ def glsm_from_refinement(F):
     **Description:**
     GLSM charge matrix of an F-theory uplift built from its blow-down fan {rho_+, rho_-} * facefan(nabla_fib) and the D7 points
     (the points of negative height of the adapted toric fan, except the axis point rho_- = (0;-2,5)). The columns are the
-    vectors of the blow-down fan (fiber rays, then rho_+ and rho_-) followed by the D7 points; the rows are, in this order,
+    vectors of `F.vectors_M_conv_toric_fan()` in their order, so that `Q @ F.vectors_M_conv_toric_fan() = 0`; the rows are,
+    in this order,
         [fiber relations among the intersecting fiber rays | D7 rows of the intersecting D7 points | tau |
-         D7 rows of the non-intersecting D7 points | fiber relations completing the first block to a Z-basis of all fiber relations].
-    The first fiber block is `glsm_from_points` of the intersecting fiber rays (padded with zeros); the completing block consists
-    of the rows of `kernel_hnf_N` of all fiber rays whose pivot lies in a non-intersecting column. The D7 row of a point d is the
-    relation 2 d = sum_j s_j v_j with v_j the rays of the cone of the blow-down fan containing d (`find_cone`, `solve_integer`),
-    with entry -2 in the column of d, or the halved relation with entry -1 if all s_j are even. The tau row is
-    3 y^2 + 2 rho_+ + rho_- with y^2 = (0;0,-1).
+         D7 rows of the non-intersecting D7 points | fiber relations completing the first block to a Z-basis of all fiber relations],
+    the D7 rows of each block in the order of `F.vectors_M_conv_toric_fan()`.
+    The first fiber block is `glsm_from_points` of the intersecting fiber rays; the completing block consists of the rows of
+    `kernel_hnf_N` of all fiber rays whose pivot lies in a non-intersecting column (the remaining rows are then supported on the
+    intersecting columns, which is verified). The D7 row of a point d is the relation 2 d = sum_j s_j v_j with v_j the rays of
+    the cone of the blow-down fan containing d (`find_cone`, `solve_integer`), with entry -2 in the column of d, or the halved
+    relation with entry -1 if all s_j are even. The tau row is 3 y^2 + 2 rho_+ + rho_- with y^2 = (0;0,-1).
     **Arguments:**
     - `F (F_Theory_Uplift)`: The F-theory uplift.
+    **Raises:**
+    - `ValueError`: Raised if rho_+ is not the only vector of positive height, if the blow-down fan does not end in rho_+, rho_-,
+      if y^2 is not a fiber ray, if the completing fiber block does not yield a Z-basis, if a D7 point lies in no cone of the
+      blow-down fan or 2 d is not an integer combination of the rays of its cone, or if the result does not annihilate the vectors.
     **Returns:**
-    - `tuple[np.ndarray, np.ndarray, tuple[int,...]]`: `(Q, vecs_tot, sizes)`: the charge matrix, the points corresponding to its
-      columns (blow-down fan vectors followed by the D7 points), and the numbers of rows of the five blocks in the order
-      (intersecting fiber, intersecting D7, tau, completing fiber, non-intersecting D7).
+    - `tuple[np.ndarray, np.ndarray, tuple[int,...]]`: `(Q, vecs, sizes)`: the charge matrix, the points corresponding to its
+      columns (`F.vectors_M_conv_toric_fan()`), and the numbers of rows of the five blocks in the order of the rows of `Q`
+      (intersecting fiber, intersecting D7, tau, non-intersecting D7, completing fiber).
     """
-    D7s=F.vectors_M_conv_toric_fan()[F.vectors_M_conv_toric_fan()@F.u<0]
-    rhom=np.zeros(D7s.shape[1],dtype=int)
-    y=rhom.copy()
-    y[-1]=-1
-    rhom[-2:]=np.array([-2,5])
-    ind=get_index(D7s,rhom)[0]
-    D7s=np.delete(D7s,ind,0)
-    D7s_intersecting=UF.get_same_rows(F.intersecting_divisors_M(),D7s)
-    D7s_not_intersecting=row_difference(D7s,D7s_intersecting)
-    f_bd=F.blow_down_fan()
-    r_fib=f_bd.vectors()[:-2]
-    inter=(r_fib[:,None]==F.intersecting_divisors_M()[None]).all(2).any(1) 
+    V=np.asarray(F.vectors_M_conv_toric_fan(),dtype=int); h=V@F.u; n,d=V.shape
+    col={tuple(map(int,v)):k for k,v in enumerate(V)}
+    def c(v):
+        t=tuple(map(int,v))
+        if t not in col: raise ValueError(f"{t} is not a vector of vectors_M_conv_toric_fan.")
+        return col[t]
+    rhop=np.zeros(d,dtype=int); rhom=rhop.copy(); y=rhop.copy()
+    rhop[-2:]=[1,-1]; rhom[-2:]=[-2,5]; y[-1]=-1
+    if not np.array_equal(V[h>0],rhop[None]): raise ValueError("rho_+ = (0;1,-1) must be the only vector of positive height.")
+    f_bd=F.blow_down_fan(); X=np.asarray(f_bd.vectors(),dtype=int)
+    if not np.array_equal(X[-2:],np.array([rhop,rhom])): raise ValueError("The blow-down fan must end in rho_+, rho_-.")
+    cX=np.array([c(v) for v in X]); r_fib=X[:-2]; cf=cX[:-2]
+    inter_set={tuple(map(int,v)) for v in F.intersecting_divisors_M()}
+    inter=np.array([tuple(map(int,v)) in inter_set for v in r_fib],dtype=bool)
     ii,ni=np.flatnonzero(inter),np.flatnonzero(~inter)
-    Qi=UF.glsm_from_points(r_fib[ii])
-    Qb_intersecting=np.zeros((len(Qi),len(r_fib)),dtype=int); Qb_intersecting[:,ii]=Qi 
-    Hker,pv=UF.kernel_hnf_N(r_fib,[*ni,*ii])
-    Qb_not_intersecting=Hker[np.isin(pv,ni)]
-    bdlen=Qb_intersecting.shape[1]+2
-    Qb_intersecting=np.concatenate((Qb_intersecting,np.zeros((Qb_intersecting.shape[0],len(D7s)+2),dtype=int)),axis=1)
-    Qb_not_intersecting=np.concatenate((Qb_not_intersecting,np.zeros((Qb_not_intersecting.shape[0],len(D7s)+2),dtype=int)),axis=1)
-    Qd7_intersecting=np.zeros((len(D7s_intersecting),Qb_intersecting.shape[1]),dtype=int)
-    for i,d7 in enumerate(D7s_intersecting):
-        c7=np.array(list(find_cone(d7,f_bd.cones(),f_bd.vectors())))
-        c7_vecs=f_bd.vectors(c7)
-        sol=solve_integer(c7_vecs.T,2*d7)
-        if np.all(sol%2==0):
-            sol=np.rint(sol/2).astype(int)
-            Qd7_intersecting[i,bdlen+i]=-1
-        else:
-            Qd7_intersecting[i,bdlen+i]=-2
-        Qd7_intersecting[i,c7-1]=sol
-    Qd7_not_intersecting=np.zeros((len(D7s_not_intersecting),Qb_intersecting.shape[1]),dtype=int)
-    for i,d7 in enumerate(D7s_not_intersecting):
-        c7=np.array(list(find_cone(d7,f_bd.cones(),f_bd.vectors())))
-        c7_vecs=f_bd.vectors(c7)
-        sol=solve_integer(c7_vecs.T,2*d7)
-        if np.all(sol%2==0):
-            sol=np.rint(sol/2).astype(int)
-            Qd7_not_intersecting[i,bdlen+i]=-1
-        else:
-            Qd7_not_intersecting[i,bdlen+i]=-2
-        Qd7_not_intersecting[i,c7-1]=sol
-    qfinal=np.zeros((1,Qb_intersecting.shape[1]),dtype=int)
-    indy=get_index(f_bd.vectors(),y)[0]
-    qfinal[0,indy]=3
-    qfinal[0,bdlen-2]=2
-    qfinal[0,bdlen-1]=1
-    vecs_tot=np.concatenate((f_bd.vectors(),D7s),axis=0)
+    Qi=glsm_from_points(r_fib[ii])
+    Qb_intersecting=np.zeros((len(Qi),n),dtype=int); Qb_intersecting[:,cf[ii]]=Qi
+    Hker,pv=kernel_hnf_N(r_fib,[*ni,*ii]); keep=np.isin(pv,ni)
+    if Hker[~keep][:,ni].any(): raise ValueError("The intersecting fiber rays do not span the fiber relations; no Z-basis completion.")
+    Qb_not_intersecting=np.zeros((keep.sum(),n),dtype=int); Qb_not_intersecting[:,cf]=Hker[keep]
+    is_d7=(h<0)&~(V==rhom).all(axis=1)
+    d7_inter=np.array([tuple(map(int,v)) in inter_set for v in V],dtype=bool)
+    def d7_row(k):
+        d7=V[k]; c7=find_cone(d7,f_bd.cones(),X)
+        if c7 is None: raise ValueError(f"The D7 point {tuple(d7)} lies in no cone of the blow-down fan.")
+        c7=np.array(sorted(c7)); sol=solve_integer(X[c7-1].T,2*d7); row=np.zeros(n,dtype=int)
+        if np.all(sol%2==0): sol=sol//2; row[k]=-1
+        else: row[k]=-2
+        row[cX[c7-1]]=sol
+        return row
+    Qd7_intersecting=np.array([d7_row(k) for k in np.flatnonzero(is_d7&d7_inter)],dtype=int).reshape(-1,n)
+    Qd7_not_intersecting=np.array([d7_row(k) for k in np.flatnonzero(is_d7&~d7_inter)],dtype=int).reshape(-1,n)
+    qfinal=np.zeros((1,n),dtype=int); qfinal[0,c(y)]=3; qfinal[0,c(rhop)]=2; qfinal[0,c(rhom)]=1
     Q=np.concatenate((Qb_intersecting,Qd7_intersecting,qfinal,Qd7_not_intersecting,Qb_not_intersecting),axis=0)
-    return (Q,vecs_tot,(Qb_intersecting.shape[0],Qd7_intersecting.shape[0],1,Qb_not_intersecting.shape[0],Qd7_not_intersecting.shape[0]))
+    if (Q@V).any(): raise ValueError("The charge matrix does not annihilate the vectors.")
+    return (Q,(len(Qb_intersecting),len(Qd7_intersecting),1,len(Qd7_not_intersecting),len(Qb_not_intersecting)))
 
 # def glsm_from_refinement(F):
 #     D7s=F.vectors_M_conv_toric_fan()[F.vectors_M_conv_toric_fan()@F.u<0]
@@ -6716,37 +6708,90 @@ def glsm_from_refinement(F):
 #     Q=np.concatenate((Qb,Qd7_intersecting,Qd7_not_intersecting,qfinal),axis=0)
 #     return (Q,vecs_tot,Qb.shape[0],Qd7_not_intersecting.shape[0])
 
-def saturate_glsm(Q,n_bulk):
+def _left_kernel_mod_p(M,p):
     """
     **Description:**
-    Enlarges the lattice spanned by the rows of a GLSM charge matrix with row structure [bulk | D7 | tau] by all half-integral
-    combinations that are integral, in a single pass: the left kernel of Q modulo two (`nullspace_mod2`) is computed once, brought
-    to reduced row echelon form with pivots chosen among the tau row first, then the bulk rows, then the D7 rows (so that the D7
-    rows are replaced last and the spans of the D7 block and of the other rows are preserved), and each pivot row is replaced by
-    half of the corresponding even combination. Combinations of higher index (modulo four and beyond) are not treated.
+    Basis of the left kernel of an integer matrix over the prime field F_p, i.e. of the vectors y in {0,...,p-1}^r with
+    y @ M = 0 mod p, by Gaussian elimination on the augmented matrix [M mod p | 1].
     **Arguments:**
-    - `Q (ArrayLike)`: Integer charge matrix with the bulk rows first, the D7 rows next and the tau row last.
-    - `n_bulk (int)`: Number of leading bulk rows.
+    - `M (ArrayLike)`: Integer matrix of shape (r,n).
+    - `p (int)`: A prime.
+    **Returns:**
+    - `np.ndarray`: Integer matrix with entries in {0,...,p-1} whose rows form a basis of the left kernel modulo p
+      (shape (r - rank_p(M), r)).
+    """
+    A=np.asarray(M,dtype=np.int64)%p; r,n=A.shape; E=np.hstack([A,np.eye(r,dtype=np.int64)]); piv=0
+    for c in range(n):
+        rows=np.flatnonzero(E[piv:,c])+piv
+        if not len(rows): continue
+        E[[piv,rows[0]]]=E[[rows[0],piv]]
+        E[piv]=(E[piv]*pow(int(E[piv,c]),-1,p))%p
+        for i in np.flatnonzero(E[:,c]):
+            if i!=piv: E[i]=(E[i]-E[i,c]*E[piv])%p
+        piv+=1
+        if piv==r: break
+    return E[piv:,n:]
+
+def saturate_glsm(Q,protected_rows=None,primes=None,return_combinations=False):
+    """
+    **Description:**
+    Saturates the lattice spanned by the rows of an integer matrix with linearly independent rows, i.e. enlarges it to all
+    integer vectors that are rational combinations of the rows, by replacing rows in place. For every prime p dividing an
+    invariant factor of Q, passes are made until the rows are independent modulo p: in each pass the left kernel of Q modulo p
+    (`_left_kernel_mod_p`) is brought to reduced row echelon form over F_p with the pivots chosen among the unprotected rows
+    first (later rows first) and the protected rows last (again later rows first), and every pivot row is replaced by the
+    p-th part of its kernel combination, which involves, besides the pivot row, only rows kept in that pass. Hence a
+    combination involving an unprotected row replaces an unprotected row, and a protected row is replaced only by a
+    combination of protected rows alone: the protected rows stay within themselves. For the matrix of `glsm_from_refinement`
+    with block sizes s, the D7 rows are `np.r_[s[0]:s[0]+s[1], s[0]+s[1]+1:s[0]+s[1]+1+s[3]]`.
+    **Arguments:**
+    - `Q (ArrayLike)`: Integer matrix with linearly independent rows, e.g. a GLSM charge matrix.
+    - `protected_rows (Iterable[int], optional)`: Indices of the rows that may only be combined among themselves. Defaults to
+      none, in which case the lattice is saturated with the later rows replaced first.
+    - `primes (Iterable[int], optional)`: The primes at which to saturate. Defaults to all primes dividing the invariant factors
+      of Q (computed with `snf`); passing e.g. `[2]` skips the Smith normal form and saturates at two only, which is complete
+      iff no invariant factor has an odd prime factor.
+    - `return_combinations (bool)`: Whether to also return how the changed rows are composed of the input rows. Defaults to
+      `False`.
     **Raises:**
+    - `ValueError`: Raised if the rows of Q are linearly dependent or a protected row index is out of range.
     - `OverflowError`: Raised if an entry of the result does not fit into a 64-bit integer.
     **Returns:**
-    - `np.ndarray`: The saturated charge matrix, rows in the original order.
+    - `np.ndarray | tuple[np.ndarray, dict[int, dict[int, float]]]`: The saturated matrix, rows in the original order. If
+      `return_combinations` is `True`, also a dictionary with one entry per changed row i, mapping i to the coefficients
+      {j: c_j} of the input rows (floats, computed exactly and converted) such that the new row i equals
+      sum_j c_j * (input row j); e.g. {5: {3: 0.5, 5: 0.5}} means that the new row 5 is half the sum of the input rows 3 and 5.
+      Rows that are not keys are unchanged.
     """
-    Q=np.asarray(Q,dtype=object)
-    order=np.r_[np.arange(n_bulk,len(Q)-1),np.arange(n_bulk),len(Q)-1]
-    R=Q[order].copy(); N=nullspace_mod2(np.asarray(R%2,dtype=int)); pivots=[]; i=0
-    for j in range(len(R)-1,-1,-1):
-        rows=np.flatnonzero(N[i:,j])+i
-        if not len(rows): continue
-        N[[i,rows[0]]]=N[[rows[0],i]]
-        for k in np.flatnonzero(N[:,j]):
-            if k!=i: N[k]^=N[i]
-        pivots.append(j); i+=1
-        if i==len(N): break
-    R[pivots]=(N.astype(object)@R)//2
-    result=np.empty_like(R); result[order]=R
-    if max((abs(int(x)) for x in result.flat),default=0)>np.iinfo(np.int64).max: raise OverflowError('Saturated entries exceed int64; use the exact object array.')
-    return result.astype(np.int64)
+    Q=np.array(Q,dtype=object); r,n=Q.shape
+    if np.linalg.matrix_rank(Q.astype(float))<r: raise ValueError("The rows of Q must be linearly independent.")
+    prot=np.zeros(r,dtype=bool); idx=np.array(list(protected_rows) if protected_rows is not None else [],dtype=int)
+    if len(idx) and (idx.min()<0 or idx.max()>=r): raise ValueError("protected_rows out of range.")
+    prot[idx]=True; pref=np.concatenate((np.flatnonzero(~prot)[::-1],np.flatnonzero(prot)[::-1]))
+    if primes is None:
+        D=snf(Q); primes=sorted({q for i in range(r) for q in factorint(int(D[i,i]))})
+    T=np.array([[Fraction(int(i==j)) for j in range(r)] for i in range(r)],dtype=object)
+    for p in primes:
+        while True:
+            N=_left_kernel_mod_p((Q%p).astype(np.int64),p)
+            if len(N)==0: break
+            pivots=[]; i=0
+            for j in pref:
+                if i==len(N): break
+                rows=np.flatnonzero(N[i:,j])+i
+                if not len(rows): continue
+                N[[i,rows[0]]]=N[[rows[0],i]]
+                N[i]=(N[i]*pow(int(N[i,j]),-1,p))%p
+                for k in np.flatnonzero(N[:,j]):
+                    if k!=i: N[k]=(N[k]-N[k,j]*N[i])%p
+                pivots.append(int(j)); i+=1
+            new=N[:len(pivots)].astype(object)@Q
+            if (new%p).any(): raise RuntimeError("inexact kernel combination in saturate_glsm")
+            Q[pivots]=new//p; T[pivots]=(N[:len(pivots)].astype(object)@T)/p
+    if max((abs(int(x)) for x in Q.flat),default=0)>np.iinfo(np.int64).max: raise OverflowError('Saturated entries exceed int64; use the exact object array.')
+    if not return_combinations: return Q.astype(np.int64)
+    combos={i:{int(j):float(T[i,j]) for j in np.flatnonzero(T[i]!=0)} for i in range(r) if any(T[i,j]!=int(i==j) for j in range(r))}
+    return Q.astype(np.int64),combos
 
 def _facets(fan: Fan, c: tuple) -> list[tuple]:
     """
@@ -6915,3 +6960,19 @@ def common_fan_refinement(fan1,face_fan,vectors_fine_to_add=None,simplicial=Fals
     if simplicial:
         return make_simplicial(Fan(vc=VectorConfiguration(np.array(list(row))),cones=cones))
     return Fan(vc=VectorConfiguration(np.array(list(row))),cones=cones)
+
+def compute_D7_GV(F,Q=None,INQ=None,IN_surfaces=None,hilbert_basis=False,min_points=600,max_deg=2):
+    Q,sizes=glsm_from_refinement(F)
+    d7_rows=np.arange(sizes[0],sizes[0]+sizes[1])
+    q,order_dict=saturate_glsm(Q,protected_rows=d7_rows,return_combinations=True)
+    INq=tensor_symm_in_basis(F.intersection_numbers_M(),F.basis_homology_M(),q,in_prime_basis=True)
+    MC_face=mori_cone_in_glsm_basis(Q=q,fan=F.M_conv_toric_fan(),sub_rows=d7_rows,as_face_in_higher_dim_ambient=True)
+    if hilbert_basis:
+        gens=MC_face.hilbert_basis()
+    else:
+        gens=MC_face.rays()
+    gvec_face=MC_face.find_grading_vector()
+    IN_surf,surf_dict=intersection_number_surfaces(INq,q.shape[0])
+    nef_part_GV=F.nef_partition_M(toric_fan_adapted=True,zero_based=True,as_divisors=False)
+    gv=compute_gv(generators=gens,min_points=min_points,grading_vector=gvec_face,q=q,intnums=IN_surf,max_deg=max_deg,nefpart=nef_part_GV)
+    return gv
