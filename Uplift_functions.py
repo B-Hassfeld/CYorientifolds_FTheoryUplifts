@@ -50,6 +50,8 @@ from cytools.utils import integral_nullspace, lll_reduce
 from cytools.vector_config.fan import Fan
 from cytools.vector_config import VectorConfiguration
 import ppl
+import warnings
+from cytools.cone import dualize
 from cygv import compute_gv
 from numpy.typing import ArrayLike
 if TYPE_CHECKING:
@@ -5478,52 +5480,52 @@ def kernel_hnf_N(V,cols):
 #     Q=np.vstack([bulkrows,D7,Fo,tau])
 #     return Q
 
-def adapted_glsm(V,bulk,u=np.array([0,0,0,0,1,0]),return_rows=False):
-    """
-    **Description:**
-    GLSM charge matrix of the points `V` adapted to the elliptic fibration with height h = V @ u, with the row structure
-        [bulk | fiber-only | D7 | tau].
-    It is the Hermite form `kernel_hnf_N` of all relations among the points, pivoting first on the positive point p of minimal
-    height (the Weierstrass point rho_+), then on the other positive and the negative points (D7 directions, the negative point b0
-    of maximal height last), then on the bulk points and finally on the remaining height-zero (fiber-only) points. Ties among
-    candidates for p and b0 are broken in favour of points on the fiber axis (vanishing base coordinates) with smaller last
-    coordinate. Consequently the bulk rows are supported on height-zero points only, the fiber-only rows on fiber-only points
-    only, and the D7 rows have no entry at p. The tau row is the unique row involving p; it is taken from the Hermite form
-    without the bulk columns whenever that does not change its entry at p, so that it is supported away from the bulk points.
-    **Arguments:**
-    - `V (ArrayLike)`: The toric points, one per row.
-    - `bulk (int|ArrayLike)`: Either the number of leading points that are bulk (base) points, or an array of their indices.
-    - `u (ArrayLike)`: Linear form defining the height. Defaults to `(0,0,0,0,1,0)`.
-    - `return_rows (bool)`: Whether to also return the row indices of the four blocks. Defaults to `False`.
-    **Returns:**
-    - `np.ndarray | tuple[np.ndarray, dict]`: The charge matrix `Q`, or the pair `(Q, rows)` with
-      `rows = {'bulk', 'fiber', 'd7', 'tau'}` mapping each block to its 0-based row indices (`'tau'` is the single last row).
-    """
-    V=np.asarray(V); h=V@u; B=np.arange(bulk) if np.isscalar(bulk) else np.asarray(bulk)
-    N,S=np.flatnonzero(h>0),np.flatnonzero(h<0); tie=lambda i:(V[i,:-2].any(),V[i,-1])
-    p=min(N[h[N]==h[N].min()],key=tie); b0=min(S[h[S]==h[S].max()],key=tie)
-    S=np.r_[N[N!=p],S[S!=b0],b0]; Fl=np.setdiff1d(np.flatnonzero(h==0),B)
-    H,pv=kernel_hnf_N(V,[p,*S,*B,*Fl])
-    Hnb,_=kernel_hnf_N(V,[p,*S,*Fl])
-    tau=Hnb[0] if Hnb[0,p]==H[0,p] else H[0]
-    blocks=[H[np.isin(pv,B)],H[np.isin(pv,Fl)],H[np.isin(pv,S)]]
-    Q=np.vstack(blocks+[tau])
-    if not return_rows: return Q
-    c=np.cumsum([0]+[len(b) for b in blocks])
-    return Q,{"bulk":np.arange(c[0],c[1]),"fiber":np.arange(c[1],c[2]),"d7":np.arange(c[2],c[3]),"tau":len(Q)-1}
+# def adapted_glsm(V,bulk,u=np.array([0,0,0,0,1,0]),return_rows=False):
+#     """
+#     **Description:**
+#     GLSM charge matrix of the points `V` adapted to the elliptic fibration with height h = V @ u, with the row structure
+#         [bulk | fiber-only | D7 | tau].
+#     It is the Hermite form `kernel_hnf_N` of all relations among the points, pivoting first on the positive point p of minimal
+#     height (the Weierstrass point rho_+), then on the other positive and the negative points (D7 directions, the negative point b0
+#     of maximal height last), then on the bulk points and finally on the remaining height-zero (fiber-only) points. Ties among
+#     candidates for p and b0 are broken in favour of points on the fiber axis (vanishing base coordinates) with smaller last
+#     coordinate. Consequently the bulk rows are supported on height-zero points only, the fiber-only rows on fiber-only points
+#     only, and the D7 rows have no entry at p. The tau row is the unique row involving p; it is taken from the Hermite form
+#     without the bulk columns whenever that does not change its entry at p, so that it is supported away from the bulk points.
+#     **Arguments:**
+#     - `V (ArrayLike)`: The toric points, one per row.
+#     - `bulk (int|ArrayLike)`: Either the number of leading points that are bulk (base) points, or an array of their indices.
+#     - `u (ArrayLike)`: Linear form defining the height. Defaults to `(0,0,0,0,1,0)`.
+#     - `return_rows (bool)`: Whether to also return the row indices of the four blocks. Defaults to `False`.
+#     **Returns:**
+#     - `np.ndarray | tuple[np.ndarray, dict]`: The charge matrix `Q`, or the pair `(Q, rows)` with
+#       `rows = {'bulk', 'fiber', 'd7', 'tau'}` mapping each block to its 0-based row indices (`'tau'` is the single last row).
+#     """
+#     V=np.asarray(V); h=V@u; B=np.arange(bulk) if np.isscalar(bulk) else np.asarray(bulk)
+#     N,S=np.flatnonzero(h>0),np.flatnonzero(h<0); tie=lambda i:(V[i,:-2].any(),V[i,-1])
+#     p=min(N[h[N]==h[N].min()],key=tie); b0=min(S[h[S]==h[S].max()],key=tie)
+#     S=np.r_[N[N!=p],S[S!=b0],b0]; Fl=np.setdiff1d(np.flatnonzero(h==0),B)
+#     H,pv=kernel_hnf_N(V,[p,*S,*B,*Fl])
+#     Hnb,_=kernel_hnf_N(V,[p,*S,*Fl])
+#     tau=Hnb[0] if Hnb[0,p]==H[0,p] else H[0]
+#     blocks=[H[np.isin(pv,B)],H[np.isin(pv,Fl)],H[np.isin(pv,S)]]
+#     Q=np.vstack(blocks+[tau])
+#     if not return_rows: return Q
+#     c=np.cumsum([0]+[len(b) for b in blocks])
+#     return Q,{"bulk":np.arange(c[0],c[1]),"fiber":np.arange(c[1],c[2]),"d7":np.arange(c[2],c[3]),"tau":len(Q)-1}
 
-def adapted_glsm_uplift(F,return_rows=False):
-    """
-    **Description:**
-    Applies `adapted_glsm` to an F-theory uplift, using its intersecting M-lattice divisors (in the adapted toric fan ordering) and the number of intersecting base divisors as the bulk size.
-    **Arguments:**
-    - `F (F_Theory_Uplift)`: The F-theory uplift.
-    **Returns:**
-    - `np.ndarray`: The adapted GLSM charge matrix.
-    """
-    V=F.vectors_M_conv_toric_fan()
-    n_bulk=len(F.intersecting_divisors_B_M(as_labels=True))+len(F.vertices_B_not_intersecting())
-    return adapted_glsm(V,n_bulk,return_rows=return_rows)
+# def adapted_glsm_uplift_OLD(F,return_rows=False):
+#     """
+#     **Description:**
+#     Applies `adapted_glsm` to an F-theory uplift, using its intersecting M-lattice divisors (in the adapted toric fan ordering) and the number of intersecting base divisors as the bulk size.
+#     **Arguments:**
+#     - `F (F_Theory_Uplift)`: The F-theory uplift.
+#     **Returns:**
+#     - `np.ndarray`: The adapted GLSM charge matrix.
+#     """
+#     V=F.vectors_M_conv_toric_fan()
+#     n_bulk=len(F.intersecting_divisors_B_M(as_labels=True))+len(F.vertices_B_not_intersecting())
+#     return adapted_glsm(V,n_bulk,return_rows=return_rows)
 
 # All 24 permutations of four indices, one per row, used to symmetrise dense quartic intersection tensors.
 _PERMS4=np.array(list(permutations(range(4))))
@@ -5893,28 +5895,21 @@ def symmetric_d7_basis(Q: np.ndarray,IN: Mapping[tuple[int,...],int|float],d7_ro
     Qn[d7]=Afull@Q[d7]
     return {"Q":Qn,"transform":Afull,"index":abs(int(fmpz_mat(Afull.tolist()).det())),"blocks":[np.array(b) for b in rows],"classes":classes,"sign_symmetric":sign_symmetric,"rank_one":rank_one,"intersection_numbers":_quartic_dict(T,tol)}
 
-def symmetric_glsm_uplift(F: F_Theory_Uplift,tol: float=1e-6)->dict[str,Any]:
-    """
-    **Description:**
-    Applies `symmetric_d7_basis` to the adapted GLSM of an F-theory uplift. The D7 rows are the rows of `adapted_glsm_uplift(F)` between the bulk rows and the final tau row (one per special fiber point other than b0).
-    **Arguments:**
-    - `F (F_Theory_Uplift)`: The F-theory uplift.
-    - `tol (float)`: Tolerance for comparing intersection numbers. Defaults to `1e-6`.
-    **Returns:**
-    - `dict[str,Any]`: The output of `symmetric_d7_basis`, with the additional key `d7_rows`.
-    """
-    Q,rows=adapted_glsm_uplift(F,return_rows=True)
-    d7=rows["d7"]
-    IN=_tensor_symm_in_glsm_basis(F.intersection_numbers_M(),Q,F.basis_homology_M())
-    res=symmetric_d7_basis(Q,IN,d7,tol=tol)
-    return (res["Q"],res["intersection_numbers"],res["index"])
-    # Q=adapted_glsm_uplift(F)
-    # V=F.vectors_M_conv_toric_fan()
-    # n_d7=int(np.sum(V@np.array([0,0,0,0,1,0])<0))-1
-    # d7=np.arange(len(Q)-1-n_d7,len(Q)-1)
-    # IN=_tensor_symm_in_glsm_basis(F.intersection_numbers_M(),Q,F.basis_homology_M())
-    # res=symmetric_d7_basis(Q,IN,d7,tol=tol)
-    # return (res["Q"],res["intersection_numbers"],res["index"])
+# def symmetric_glsm_uplift(F: F_Theory_Uplift,tol: float=1e-6)->dict[str,Any]:
+#     """
+#     **Description:**
+#     Applies `symmetric_d7_basis` to the adapted GLSM of an F-theory uplift. The D7 rows are the rows of `adapted_glsm_uplift(F)` between the bulk rows and the final tau row (one per special fiber point other than b0).
+#     **Arguments:**
+#     - `F (F_Theory_Uplift)`: The F-theory uplift.
+#     - `tol (float)`: Tolerance for comparing intersection numbers. Defaults to `1e-6`.
+#     **Returns:**
+#     - `dict[str,Any]`: The output of `symmetric_d7_basis`, with the additional key `d7_rows`.
+#     """
+#     Q,rows=adapted_glsm_uplift(F,return_rows=True)
+#     d7=rows["d7"]
+#     IN=_tensor_symm_in_glsm_basis(F.intersection_numbers_M(),Q,F.basis_homology_M())
+#     res=symmetric_d7_basis(Q,IN,d7,tol=tol)
+#     return (res["Q"],res["intersection_numbers"],res["index"])
 
 def gram_matrix(IN_in_basis: Mapping[tuple[int,...],int|float])->tuple[np.ndarray,dict[tuple[int,int],int],dict[int,tuple[int,int]]]:
     """
@@ -6031,7 +6026,6 @@ def intersection_form_H22_vertical_from_gram_matrix(M: ArrayLike,max_nodes: int=
     M=fmpz_mat(M.tolist())
     H=M.hnf()
     r=H.rank()
-    # column i of P = coordinates of row i of M in the first r rows of H, i.e. P^T H[:r] = M, solved on the pivot columns
     P=fmpz_mat(0,N)
     if r:
         piv=[next(j for j in range(N) if H[k,j]!=0) for k in range(r)]
@@ -6316,177 +6310,173 @@ def check_sen_scaling(F: "F_Theory_Uplift",Q: ArrayLike)->tuple[bool,np.ndarray]
     w=Q@np.where(k>2,(k-1)//2,0)                                 
     return bool(w[-1]==2 and not w[:-1].any()),w
 
-def d7_mori_face(G: ArrayLike,d7_rows: Sequence[int])->tuple[np.ndarray,np.ndarray]:
-    """
-    **Description:**
-    Face of the Mori cone spanned by the curves that shrink on the D7 face of the Kahler cone. Curve classes are written in the basis of the GLSM rows, so t_a is the volume of the
-    row curve l^a and the D7 face is K_D7 = K cap {t_mu = 0 : mu in d7_rows}, K = {t : G t >= 0}. A point t* in the relative interior of K_D7 is found by the LP
-        max sum_i s_i   s.t.   G t >= s,   0 <= s <= 1,   t_mu = 0,
-    whose optimum has s_i = 1 exactly for the generators that are not identically zero on K_D7. The curves shrinking at t* span the dual face MC cap t*^perp, generated by the G_i with s_i = 0.
-    The face is extremal, so every splitting of a class in it into effective classes stays in it: the HKTY series truncated to the face is closed and its GV invariants are exact.
-    **Arguments:**
-    - `G (ArrayLike)`: Generators (rays or Hilbert basis) of the Mori cone in the GLSM basis, one per row.
-    - `d7_rows (Sequence[int])`: 0-based indices of the D7 rows.
-    **Returns:**
-    - `tuple[np.ndarray,np.ndarray]`: Boolean mask of the generators lying in the face, and t*.
-    """
-    G=np.asarray(G,dtype=float); n,h=G.shape
-    bounds=[(None,None)]*h+[(0,1)]*n
-    for mu in d7_rows: bounds[mu]=(0,0)
-    res=linprog(np.r_[np.zeros(h),-np.ones(n)],A_ub=np.hstack([-G,np.eye(n)]),b_ub=np.zeros(n),bounds=bounds,method="highs")
-    if res.status: raise RuntimeError(res.message)
-    return res.x[h:]<0.5,res.x[:h]
+# def d7_mori_face(G: ArrayLike,d7_rows: Sequence[int])->tuple[np.ndarray,np.ndarray]:
+#     """
+#     **Description:**
+#     Face of the Mori cone spanned by the curves that shrink on the D7 face of the Kahler cone. Curve classes are written in the basis of the GLSM rows, so t_a is the volume of the
+#     row curve l^a and the D7 face is K_D7 = K cap {t_mu = 0 : mu in d7_rows}, K = {t : G t >= 0}. A point t* in the relative interior of K_D7 is found by the LP
+#         max sum_i s_i   s.t.   G t >= s,   0 <= s <= 1,   t_mu = 0,
+#     whose optimum has s_i = 1 exactly for the generators that are not identically zero on K_D7. The curves shrinking at t* span the dual face MC cap t*^perp, generated by the G_i with s_i = 0.
+#     The face is extremal, so every splitting of a class in it into effective classes stays in it: the HKTY series truncated to the face is closed and its GV invariants are exact.
+#     **Arguments:**
+#     - `G (ArrayLike)`: Generators (rays or Hilbert basis) of the Mori cone in the GLSM basis, one per row.
+#     - `d7_rows (Sequence[int])`: 0-based indices of the D7 rows.
+#     **Returns:**
+#     - `tuple[np.ndarray,np.ndarray]`: Boolean mask of the generators lying in the face, and t*.
+#     """
+#     G=np.asarray(G,dtype=float); n,h=G.shape
+#     bounds=[(None,None)]*h+[(0,1)]*n
+#     for mu in d7_rows: bounds[mu]=(0,0)
+#     res=linprog(np.r_[np.zeros(h),-np.ones(n)],A_ub=np.hstack([-G,np.eye(n)]),b_ub=np.zeros(n),bounds=bounds,method="highs")
+#     if res.status: raise RuntimeError(res.message)
+#     return res.x[h:]<0.5,res.x[:h]
 
-def compute_d7_gv_invariants(F,q=None,d7_rows=None,max_deg=5,min_points=None,hilbert_basis=False):
-    """
-    **Description:**
-    Genus-zero GV invariants of the curve classes in the face of the Mori cone dual to the D7 face of the Kahler cone (all t_mu = 0 for the D7 rows, all other directions generic),
-    see `d7_mori_face`. Only classes in that face are enumerated, which is exact since the face is extremal.
-    Warns if the face is not spanned by the D7 rows alone, i.e. if curves with non-D7 components shrink as well.
-    **Arguments:**
-    - `F (F_Theory_Uplift)`: The F-theory uplift.
-    - `q (ArrayLike|None)`: GLSM charge matrix. Defaults to `adapted_glsm_uplift(F)`.
-    - `d7_rows (Sequence[int]|None)`: 0-based D7 rows of `q`; required if `q` is given.
-    - `max_deg (int|None)`: Maximal degree w.r.t. the grading vector of the Mori cone (takes precedence over `min_points` in cygv). Defaults to `5`.
-    - `min_points (int|None)`: Minimal number of points, used if `max_deg` is `None`.
-    - `hilbert_basis (bool)`: Generate the face by the Hilbert basis instead of the rays; needed to reach all lattice points of the face if the ray semigroup is not saturated.
-    **Returns:**
-    - `tuple`: (gv, q, surface_dict) with gv the output of `compute_gv` (all classes lie in the face).
-    """
-    if q is None: q,rows=adapted_glsm_uplift(F,return_rows=True); d7_rows=rows["d7"]
-    elif d7_rows is None: raise ValueError("d7_rows is required if q is given")
-    q=np.asarray(q,dtype=int)
-    MC=mori_cone_in_glsm_basis(q,F.M_conv_toric_fan())
-    G=np.rint(np.asarray(MC.hilbert_basis() if hilbert_basis else MC.rays(),dtype=float)).astype(int)
-    face,_=d7_mori_face(G,d7_rows)
-    if not face.any() or face.all(): raise ValueError("The D7 locus t_mu=0 is not a proper face of the Kahler cone: "+("no curve shrinks." if not face.any() else "it is the origin."))
-    Gf=G[face]; r=np.linalg.matrix_rank(Gf)
-    if r!=len(d7_rows) or np.delete(Gf,d7_rows,axis=1).any():
-        warnings.warn(f"The shrinking face has rank {r} for {len(d7_rows)} D7 rows and/or contains curves with non-D7 components; they shrink on the D7 face too.")
-    IN_surfaces,surface_dict=intersection_number_surfaces(tensor_symm_in_basis(F.intersection_numbers_M(),F.basis_homology_M(),q,in_prime_basis=True))
-    gv=compute_gv(generators=Gf,grading_vector=MC.find_grading_vector(),q=q,intnums=IN_surfaces,max_deg=max_deg,min_points=min_points,nefpart=F.nef_partition_M(zero_based=True,toric_fan_adapted=True))
-    return gv,q,surface_dict
+# def compute_d7_gv_invariants(F,q=None,d7_rows=None,max_deg=5,min_points=None,hilbert_basis=False):
+#     """
+#     **Description:**
+#     Genus-zero GV invariants of the curve classes in the face of the Mori cone dual to the D7 face of the Kahler cone (all t_mu = 0 for the D7 rows, all other directions generic),
+#     see `d7_mori_face`. Only classes in that face are enumerated, which is exact since the face is extremal.
+#     Warns if the face is not spanned by the D7 rows alone, i.e. if curves with non-D7 components shrink as well.
+#     **Arguments:**
+#     - `F (F_Theory_Uplift)`: The F-theory uplift.
+#     - `q (ArrayLike|None)`: GLSM charge matrix. Defaults to `adapted_glsm_uplift(F)`.
+#     - `d7_rows (Sequence[int]|None)`: 0-based D7 rows of `q`; required if `q` is given.
+#     - `max_deg (int|None)`: Maximal degree w.r.t. the grading vector of the Mori cone (takes precedence over `min_points` in cygv). Defaults to `5`.
+#     - `min_points (int|None)`: Minimal number of points, used if `max_deg` is `None`.
+#     - `hilbert_basis (bool)`: Generate the face by the Hilbert basis instead of the rays; needed to reach all lattice points of the face if the ray semigroup is not saturated.
+#     **Returns:**
+#     - `tuple`: (gv, q, surface_dict) with gv the output of `compute_gv` (all classes lie in the face).
+#     """
+#     if q is None: q,rows=adapted_glsm_uplift(F,return_rows=True); d7_rows=rows["d7"]
+#     elif d7_rows is None: raise ValueError("d7_rows is required if q is given")
+#     q=np.asarray(q,dtype=int)
+#     MC=mori_cone_in_glsm_basis(q,F.M_conv_toric_fan())
+#     G=np.rint(np.asarray(MC.hilbert_basis() if hilbert_basis else MC.rays(),dtype=float)).astype(int)
+#     face,_=d7_mori_face(G,d7_rows)
+#     if not face.any() or face.all(): raise ValueError("The D7 locus t_mu=0 is not a proper face of the Kahler cone: "+("no curve shrinks." if not face.any() else "it is the origin."))
+#     Gf=G[face]; r=np.linalg.matrix_rank(Gf)
+#     if r!=len(d7_rows) or np.delete(Gf,d7_rows,axis=1).any():
+#         warnings.warn(f"The shrinking face has rank {r} for {len(d7_rows)} D7 rows and/or contains curves with non-D7 components; they shrink on the D7 face too.")
+#     IN_surfaces,surface_dict=intersection_number_surfaces(tensor_symm_in_basis(F.intersection_numbers_M(),F.basis_homology_M(),q,in_prime_basis=True))
+#     gv=compute_gv(generators=Gf,grading_vector=MC.find_grading_vector(),q=q,intnums=IN_surfaces,max_deg=max_deg,min_points=min_points,nefpart=F.nef_partition_M(zero_based=True,toric_fan_adapted=True))
+#     return gv,q,surface_dict
 
-def minimal_mori_face(G: ArrayLike,zero_rows: Sequence[int])->np.ndarray:
-    """
-    **Description:**
-    Minimal face of the Mori cone MC = cone(G) containing MC cap L, L = {d : d_a = 0 for a in zero_rows}. A generator g_i lies in it iff it appears with positive coefficient in some
-    lambda >= 0 with (sum_j lambda_j g_j)_a = 0 for all a in zero_rows, since faces are extremal and a point of relint(MC cap L) has the minimal face as its own face. The maximal such support
-    is found by the LP
-        max sum_i s_i   s.t.   sum_j lambda_j G_ja = 0 (a in zero_rows),   s <= lambda,   lambda >= 0,   0 <= s <= 1,
-    whose optimum has s_i = 1 exactly on the support. No assumption is made on whether the unit vectors of zero_rows are generators of MC.
-    **Arguments:**
-    - `G (ArrayLike)`: Generators (rays or Hilbert basis) of the Mori cone in the GLSM basis, one per row.
-    - `zero_rows (Sequence[int])`: 0-based GLSM rows on which the classes of interest have degree zero.
-    **Returns:**
-    - `np.ndarray`: Boolean mask of the generators lying in the face.
-    """
-    G=np.asarray(G,dtype=float); n=len(G); z=list(zero_rows)
-    A_eq=np.hstack([G[:,z].T,np.zeros((len(z),n))])
-    res=linprog(np.r_[np.zeros(n),-np.ones(n)],A_ub=np.hstack([-np.eye(n),np.eye(n)]),b_ub=np.zeros(n),A_eq=A_eq,b_eq=np.zeros(len(z)),
-                bounds=[(0,None)]*n+[(0,1)]*n,method="highs")
-    if res.status: raise RuntimeError(res.message)
-    return res.x[n:]>0.5
+# def minimal_mori_face(G: ArrayLike,zero_rows: Sequence[int])->np.ndarray:
+#     """
+#     **Description:**
+#     Minimal face of the Mori cone MC = cone(G) containing MC cap L, L = {d : d_a = 0 for a in zero_rows}. A generator g_i lies in it iff it appears with positive coefficient in some
+#     lambda >= 0 with (sum_j lambda_j g_j)_a = 0 for all a in zero_rows, since faces are extremal and a point of relint(MC cap L) has the minimal face as its own face. The maximal such support
+#     is found by the LP
+#         max sum_i s_i   s.t.   sum_j lambda_j G_ja = 0 (a in zero_rows),   s <= lambda,   lambda >= 0,   0 <= s <= 1,
+#     whose optimum has s_i = 1 exactly on the support. No assumption is made on whether the unit vectors of zero_rows are generators of MC.
+#     **Arguments:**
+#     - `G (ArrayLike)`: Generators (rays or Hilbert basis) of the Mori cone in the GLSM basis, one per row.
+#     - `zero_rows (Sequence[int])`: 0-based GLSM rows on which the classes of interest have degree zero.
+#     **Returns:**
+#     - `np.ndarray`: Boolean mask of the generators lying in the face.
+#     """
+#     G=np.asarray(G,dtype=float); n=len(G); z=list(zero_rows)
+#     A_eq=np.hstack([G[:,z].T,np.zeros((len(z),n))])
+#     res=linprog(np.r_[np.zeros(n),-np.ones(n)],A_ub=np.hstack([-np.eye(n),np.eye(n)]),b_ub=np.zeros(n),A_eq=A_eq,b_eq=np.zeros(len(z)),
+#                 bounds=[(0,None)]*n+[(0,1)]*n,method="highs")
+#     if res.status: raise RuntimeError(res.message)
+#     return res.x[n:]>0.5
 
-def period_sector(q: ArrayLike,nefpart: Sequence[Sequence[int]],d: ArrayLike)->int:
-    """
-    **Description:**
-    Order of vanishing at rho = 0 of the I-function coefficient c_d(rho) = prod_j Gamma(1+L_j.(d+rho))/Gamma(1+L_j.rho) prod_I Gamma(1+D_I.rho)/Gamma(1+D_I.(d+rho))
-    of the curve class d, i.e. the lowest cohomological sector H^{2m} of the periods to which d contributes: m = #{I : D_I.d < 0} - #{j : L_j.d < 0}, with D_I.d = (q^T d)_I
-    and L_j = sum of the columns of nef part j. m = 0: fundamental period, m = 1: mirror map, m = 2: genus-zero (GV) sector, m >= 3: sectors fixed by the lower ones.
-    **Arguments:**
-    - `q (ArrayLike)`: GLSM charge matrix.
-    - `nefpart (Sequence[Sequence[int]])`: 0-based column indices of the nef partition parts.
-    - `d (ArrayLike)`: Curve class in the basis dual to the rows of `q`.
-    **Returns:**
-    - `int`: The sector m.
-    """
-    c=np.asarray(q,dtype=int).T@np.asarray(d,dtype=int)
-    return int((c<0).sum())-sum(int(c[list(part)].sum()<0) for part in nefpart)
+# def period_sector(q: ArrayLike,nefpart: Sequence[Sequence[int]],d: ArrayLike)->int:
+#     """
+#     **Description:**
+#     Order of vanishing at rho = 0 of the I-function coefficient c_d(rho) = prod_j Gamma(1+L_j.(d+rho))/Gamma(1+L_j.rho) prod_I Gamma(1+D_I.rho)/Gamma(1+D_I.(d+rho))
+#     of the curve class d, i.e. the lowest cohomological sector H^{2m} of the periods to which d contributes: m = #{I : D_I.d < 0} - #{j : L_j.d < 0}, with D_I.d = (q^T d)_I
+#     and L_j = sum of the columns of nef part j. m = 0: fundamental period, m = 1: mirror map, m = 2: genus-zero (GV) sector, m >= 3: sectors fixed by the lower ones.
+#     **Arguments:**
+#     - `q (ArrayLike)`: GLSM charge matrix.
+#     - `nefpart (Sequence[Sequence[int]])`: 0-based column indices of the nef partition parts.
+#     - `d (ArrayLike)`: Curve class in the basis dual to the rows of `q`.
+#     **Returns:**
+#     - `int`: The sector m.
+#     """
+#     c=np.asarray(q,dtype=int).T@np.asarray(d,dtype=int)
+#     return int((c<0).sum())-sum(int(c[list(part)].sum()<0) for part in nefpart)
 
-def compute_d7_gv_invariants_weak_coupling(F,q=None,zero_rows=None,directions=None,max_deg=5,min_points=None,face_hilbert_basis=True,strict=True,return_diagnostics=False):
-    """
-    **Description:**
-    Genus-zero GV invariants that survive the limit t = t0 + s v, s -> infinity, with v a generic point of the cone Gamma spanned by the rows of `directions` (supported on
-    `zero_rows`): large complex structure of the base and weak coupling (e^{2 pi i tau} -> 0) at finite, generic D7 moduli, in the phase of `F.M_conv_toric_fan()`.
-    A term N_d Li_2(q^d) scales as exp(-2 pi s d.v): it survives iff d.r = 0 for every generator r of Gamma (for Gamma of full rank in the zero_rows coordinates this is
-    d_a = 0 for all a in zero_rows), is suppressed iff d.r >= 0, and diverges if some d.r < 0. The function
-      1. finds the minimal Mori face containing {d : d_a = 0 for a in zero_rows} (`minimal_mori_face` on the Mori rays), generates it by the Hilbert basis of this
-         low-dimensional face (so that cygv reaches all its lattice points), enumerates its GV invariants (exact, since a face is closed under effective splitting) and keeps
-         the classes with d.r = 0 for all r;
-      2. runs cheap validity tests of the limit in this phase: a class with d.r < 0 for some r must not enter the periods. Tested are the Mori rays with d.r < 0 (the
-         obstructing generators) and the enumerated face classes: `period_sector` m <= 1 (fundamental period or mirror map; the flat D7 coordinates then diverge) is fatal,
-         m = 2 is fatal iff the GV invariant is nonzero (cygv `target_points` for the rays), m >= 3 is harmless. If no ray obstructs, Gamma lies in the ambient Kahler cone and
-         the limit is valid unconditionally; otherwise it is only tested on these classes, which is reported in a warning.
-    Warns if the Sen scaling vector of `q` (`check_sen_scaling`) has components outside zero_rows (the weak-coupling limit then moves D7 or fiber moduli), and raises if the
-    rows of `q` do not span the saturated lattice (cygv then misses curve classes; e.g. `fix_tau_row` with k > 1).
-    **Arguments:**
-    - `F (F_Theory_Uplift)`: The F-theory uplift.
-    - `q (ArrayLike|None)`: GLSM charge matrix with the row structure [bulk | fiber-only | D7 | tau] of `adapted_glsm_uplift` (e.g. from `symmetric_glsm_uplift`). Defaults to `adapted_glsm_uplift(F)`.
-    - `zero_rows (Sequence[int]|None)`: 0-based rows sent to infinity. Defaults to the bulk rows and the tau row of `adapted_glsm_uplift(F)`.
-    - `directions (ArrayLike|str|None)`: Generators of Gamma, one per row, in the Kahler-parameter basis dual to the rows of `q`, supported on `zero_rows`. `None`: the unit
-      vectors of `zero_rows` (every modulus independently). `"nef"`: the extremal rays of the projection of the ambient Kahler cone onto the non-tau zero_rows (the nef cone of
-      the pure-bulk curves, so that the base LCS limit is taken inside it) together with the unit vector of the tau row. Defaults to `None`.
-    - `max_deg (int|None)`: Maximal degree w.r.t. the grading vector of the Mori cone for the face enumeration (takes precedence over `min_points` in cygv). Defaults to `5`.
-    - `min_points (int|None)`: Minimal number of points for the face enumeration, used if `max_deg` is `None`.
-    - `face_hilbert_basis (bool)`: Generate the face by its Hilbert basis (cheap, the face is low-dimensional) instead of its rays. Defaults to `True`.
-    - `strict (bool)`: Raise `ValueError` if a validity test fails; otherwise warn and return the restricted invariants anyway. Defaults to `True`.
-    - `return_diagnostics (bool)`: Also return a dict with keys `directions` (R), `ambient_nef` (bool), `obstructing_generators` (Mori rays g with some g.r < 0, with their
-      sector), `face_generators`, `gv_face` (unrestricted face invariants), `bad` (classes that invalidate the limit, with sector and GV invariants), `sen_scaling`. Defaults to `False`.
-    **Returns:**
-    - `tuple`: (gv, q, surface_dict) with gv the restricted output of `compute_gv`; with `return_diagnostics`, (gv, q, surface_dict, diagnostics).
-    """
-    Q0,rows=adapted_glsm_uplift(F,return_rows=True)
-    q=Q0 if q is None else np.asarray(q,dtype=int)
-    if (idx:=abs(int(np.prod(np.diag(snf(q))[:len(q)]))))!=1: raise ValueError(f"The rows of q span a sublattice of index {idx}; use a basis of the saturated lattice for GV computations.")
-    z=[int(a) for a in ([*rows["bulk"],rows["tau"]] if zero_rows is None else zero_rows)]; nz=[a for a in range(len(q)) if a not in z]
-    try:
-        _,w=check_sen_scaling(F,q)
-        if w[nz].any(): warnings.warn(f"The Sen scaling vector {w.tolist()} has components outside zero_rows: the weak-coupling limit moves D7/fiber moduli; fix the tau row first (fix_tau_row).")
-    except AssertionError: w=None
-    fan=F.M_conv_toric_fan(); nefpart=F.nef_partition_M(zero_based=True,toric_fan_adapted=True)
-    MC=mori_cone_in_glsm_basis(q,fan); gvec=MC.find_grading_vector()
-    G=np.rint(np.asarray(MC.rays(),dtype=float)).astype(int)
-    # limit-direction cone Gamma, generated by the rows of R
-    if directions is None: R=np.eye(len(q),dtype=int)[z]
-    elif isinstance(directions,str) and directions=="nef":
-        tau=int(rows["tau"]); zb=[a for a in z if a!=tau]
-        Kr=np.rint(np.asarray(MC.dual().rays(),dtype=float)).astype(int)[:,zb]; Kr=Kr[Kr.any(axis=1)]
-        R=np.zeros((0,len(q)),dtype=int)
-        if len(zb): Kr=np.rint(np.asarray(Cone(Kr).extremal_rays(),dtype=float)).astype(int); R=np.zeros((len(Kr),len(q)),dtype=int); R[:,zb]=Kr
-        if tau in z: R=np.vstack([R,np.eye(len(q),dtype=int)[[tau]]])
-    else:
-        R=np.asarray(directions,dtype=int)
-        if R[:,nz].any(): raise ValueError("directions must be supported on zero_rows.")
-    face=minimal_mori_face(G,z)
-    if not face.any(): raise ValueError("No effective class has zero degree along zero_rows.")
-    Gf=np.rint(np.asarray(Cone(G[face]).hilbert_basis() if face_hilbert_basis else G[face],dtype=float)).astype(int)
-    IN_surfaces,surface_dict=intersection_number_surfaces(tensor_symm_in_basis(F.intersection_numbers_M(),F.basis_homology_M(),q,in_prime_basis=True))
-    gv_face=compute_gv(generators=Gf,grading_vector=gvec,q=q,intnums=IN_surfaces,max_deg=max_deg,min_points=min_points,nefpart=nefpart)
-    gv=[e for e in gv_face if not (R@np.asarray(e[0][0])).any()]
-    # validity of the limit on the obstructing rays and the face classes: negative volume growth must not enter the periods
-    obstructing={tuple(int(x) for x in g):period_sector(q,nefpart,g) for g in G if (R@g<0).any()}; ambient_nef=not obstructing; bad={}
-    if not ambient_nef:
-        bad={d:(m,None) for d,m in obstructing.items() if m<=1}
-        targets=[d for d,m in obstructing.items() if m==2]
-        gv_t=list(compute_gv(generators=G,grading_vector=gvec,q=q,intnums=IN_surfaces,nefpart=nefpart,target_points=np.array(targets))) if targets else []
-        for d in targets:
-            if inv:=[e for e in gv_t if e[0][0]==d and e[1]!=0]: bad[d]=(2,inv)
-        for e in gv_face:
-            if e[1]!=0 and (R@np.asarray(e[0][0])<0).any(): bad.setdefault(e[0][0],(period_sector(q,nefpart,e[0][0]),[]))[1].append(e)
-        if bad:
-            msg=("The limit along the given directions leaves the convergence region of this phase: classes with negative volume growth enter the periods: "+
-                 ", ".join(f"{d} (sector {m}{'' if inv is None else ', GV '+str(inv)})" for d,(m,inv) in bad.items())+".")
-            if strict: raise ValueError(msg)
-            warnings.warn(msg)
-        else: warnings.warn(f"The directions {R.tolist()} are not nef on the ambient toric variety (obstructing rays {list(obstructing)}); the limit was verified to be valid only on these rays and on the face classes up to degree {max_deg}.")
-    if not return_diagnostics: return gv,q,surface_dict
-    diag={"directions":R,"ambient_nef":ambient_nef,"obstructing_generators":obstructing,"face_generators":Gf,"gv_face":gv_face,"bad":bad,"sen_scaling":w}
-    return gv,q,surface_dict,diag
-
-
-import warnings
-from cytools.cone import dualize
+# def compute_d7_gv_invariants_weak_coupling(F,q=None,zero_rows=None,directions=None,max_deg=5,min_points=None,face_hilbert_basis=True,strict=True,return_diagnostics=False):
+#     """
+#     **Description:**
+#     Genus-zero GV invariants that survive the limit t = t0 + s v, s -> infinity, with v a generic point of the cone Gamma spanned by the rows of `directions` (supported on
+#     `zero_rows`): large complex structure of the base and weak coupling (e^{2 pi i tau} -> 0) at finite, generic D7 moduli, in the phase of `F.M_conv_toric_fan()`.
+#     A term N_d Li_2(q^d) scales as exp(-2 pi s d.v): it survives iff d.r = 0 for every generator r of Gamma (for Gamma of full rank in the zero_rows coordinates this is
+#     d_a = 0 for all a in zero_rows), is suppressed iff d.r >= 0, and diverges if some d.r < 0. The function
+#       1. finds the minimal Mori face containing {d : d_a = 0 for a in zero_rows} (`minimal_mori_face` on the Mori rays), generates it by the Hilbert basis of this
+#          low-dimensional face (so that cygv reaches all its lattice points), enumerates its GV invariants (exact, since a face is closed under effective splitting) and keeps
+#          the classes with d.r = 0 for all r;
+#       2. runs cheap validity tests of the limit in this phase: a class with d.r < 0 for some r must not enter the periods. Tested are the Mori rays with d.r < 0 (the
+#          obstructing generators) and the enumerated face classes: `period_sector` m <= 1 (fundamental period or mirror map; the flat D7 coordinates then diverge) is fatal,
+#          m = 2 is fatal iff the GV invariant is nonzero (cygv `target_points` for the rays), m >= 3 is harmless. If no ray obstructs, Gamma lies in the ambient Kahler cone and
+#          the limit is valid unconditionally; otherwise it is only tested on these classes, which is reported in a warning.
+#     Warns if the Sen scaling vector of `q` (`check_sen_scaling`) has components outside zero_rows (the weak-coupling limit then moves D7 or fiber moduli), and raises if the
+#     rows of `q` do not span the saturated lattice (cygv then misses curve classes; e.g. `fix_tau_row` with k > 1).
+#     **Arguments:**
+#     - `F (F_Theory_Uplift)`: The F-theory uplift.
+#     - `q (ArrayLike|None)`: GLSM charge matrix with the row structure [bulk | fiber-only | D7 | tau] of `adapted_glsm_uplift` (e.g. from `symmetric_glsm_uplift`). Defaults to `adapted_glsm_uplift(F)`.
+#     - `zero_rows (Sequence[int]|None)`: 0-based rows sent to infinity. Defaults to the bulk rows and the tau row of `adapted_glsm_uplift(F)`.
+#     - `directions (ArrayLike|str|None)`: Generators of Gamma, one per row, in the Kahler-parameter basis dual to the rows of `q`, supported on `zero_rows`. `None`: the unit
+#       vectors of `zero_rows` (every modulus independently). `"nef"`: the extremal rays of the projection of the ambient Kahler cone onto the non-tau zero_rows (the nef cone of
+#       the pure-bulk curves, so that the base LCS limit is taken inside it) together with the unit vector of the tau row. Defaults to `None`.
+#     - `max_deg (int|None)`: Maximal degree w.r.t. the grading vector of the Mori cone for the face enumeration (takes precedence over `min_points` in cygv). Defaults to `5`.
+#     - `min_points (int|None)`: Minimal number of points for the face enumeration, used if `max_deg` is `None`.
+#     - `face_hilbert_basis (bool)`: Generate the face by its Hilbert basis (cheap, the face is low-dimensional) instead of its rays. Defaults to `True`.
+#     - `strict (bool)`: Raise `ValueError` if a validity test fails; otherwise warn and return the restricted invariants anyway. Defaults to `True`.
+#     - `return_diagnostics (bool)`: Also return a dict with keys `directions` (R), `ambient_nef` (bool), `obstructing_generators` (Mori rays g with some g.r < 0, with their
+#       sector), `face_generators`, `gv_face` (unrestricted face invariants), `bad` (classes that invalidate the limit, with sector and GV invariants), `sen_scaling`. Defaults to `False`.
+#     **Returns:**
+#     - `tuple`: (gv, q, surface_dict) with gv the restricted output of `compute_gv`; with `return_diagnostics`, (gv, q, surface_dict, diagnostics).
+#     """
+#     Q0,rows=adapted_glsm_uplift(F,return_rows=True)
+#     q=Q0 if q is None else np.asarray(q,dtype=int)
+#     if (idx:=abs(int(np.prod(np.diag(snf(q))[:len(q)]))))!=1: raise ValueError(f"The rows of q span a sublattice of index {idx}; use a basis of the saturated lattice for GV computations.")
+#     z=[int(a) for a in ([*rows["bulk"],rows["tau"]] if zero_rows is None else zero_rows)]; nz=[a for a in range(len(q)) if a not in z]
+#     try:
+#         _,w=check_sen_scaling(F,q)
+#         if w[nz].any(): warnings.warn(f"The Sen scaling vector {w.tolist()} has components outside zero_rows: the weak-coupling limit moves D7/fiber moduli; fix the tau row first (fix_tau_row).")
+#     except AssertionError: w=None
+#     fan=F.M_conv_toric_fan(); nefpart=F.nef_partition_M(zero_based=True,toric_fan_adapted=True)
+#     MC=mori_cone_in_glsm_basis(q,fan); gvec=MC.find_grading_vector()
+#     G=np.rint(np.asarray(MC.rays(),dtype=float)).astype(int)
+#     # limit-direction cone Gamma, generated by the rows of R
+#     if directions is None: R=np.eye(len(q),dtype=int)[z]
+#     elif isinstance(directions,str) and directions=="nef":
+#         tau=int(rows["tau"]); zb=[a for a in z if a!=tau]
+#         Kr=np.rint(np.asarray(MC.dual().rays(),dtype=float)).astype(int)[:,zb]; Kr=Kr[Kr.any(axis=1)]
+#         R=np.zeros((0,len(q)),dtype=int)
+#         if len(zb): Kr=np.rint(np.asarray(Cone(Kr).extremal_rays(),dtype=float)).astype(int); R=np.zeros((len(Kr),len(q)),dtype=int); R[:,zb]=Kr
+#         if tau in z: R=np.vstack([R,np.eye(len(q),dtype=int)[[tau]]])
+#     else:
+#         R=np.asarray(directions,dtype=int)
+#         if R[:,nz].any(): raise ValueError("directions must be supported on zero_rows.")
+#     face=minimal_mori_face(G,z)
+#     if not face.any(): raise ValueError("No effective class has zero degree along zero_rows.")
+#     Gf=np.rint(np.asarray(Cone(G[face]).hilbert_basis() if face_hilbert_basis else G[face],dtype=float)).astype(int)
+#     IN_surfaces,surface_dict=intersection_number_surfaces(tensor_symm_in_basis(F.intersection_numbers_M(),F.basis_homology_M(),q,in_prime_basis=True))
+#     gv_face=compute_gv(generators=Gf,grading_vector=gvec,q=q,intnums=IN_surfaces,max_deg=max_deg,min_points=min_points,nefpart=nefpart)
+#     gv=[e for e in gv_face if not (R@np.asarray(e[0][0])).any()]
+#     # validity of the limit on the obstructing rays and the face classes: negative volume growth must not enter the periods
+#     obstructing={tuple(int(x) for x in g):period_sector(q,nefpart,g) for g in G if (R@g<0).any()}; ambient_nef=not obstructing; bad={}
+#     if not ambient_nef:
+#         bad={d:(m,None) for d,m in obstructing.items() if m<=1}
+#         targets=[d for d,m in obstructing.items() if m==2]
+#         gv_t=list(compute_gv(generators=G,grading_vector=gvec,q=q,intnums=IN_surfaces,nefpart=nefpart,target_points=np.array(targets))) if targets else []
+#         for d in targets:
+#             if inv:=[e for e in gv_t if e[0][0]==d and e[1]!=0]: bad[d]=(2,inv)
+#         for e in gv_face:
+#             if e[1]!=0 and (R@np.asarray(e[0][0])<0).any(): bad.setdefault(e[0][0],(period_sector(q,nefpart,e[0][0]),[]))[1].append(e)
+#         if bad:
+#             msg=("The limit along the given directions leaves the convergence region of this phase: classes with negative volume growth enter the periods: "+
+#                  ", ".join(f"{d} (sector {m}{'' if inv is None else ', GV '+str(inv)})" for d,(m,inv) in bad.items())+".")
+#             if strict: raise ValueError(msg)
+#             warnings.warn(msg)
+#         else: warnings.warn(f"The directions {R.tolist()} are not nef on the ambient toric variety (obstructing rays {list(obstructing)}); the limit was verified to be valid only on these rays and on the face classes up to degree {max_deg}.")
+#     if not return_diagnostics: return gv,q,surface_dict
+#     diag={"directions":R,"ambient_nef":ambient_nef,"obstructing_generators":obstructing,"face_generators":Gf,"gv_face":gv_face,"bad":bad,"sen_scaling":w}
+#     return gv,q,surface_dict,diag
 
 def nullspace_mod2(M):
     """
@@ -6508,76 +6498,6 @@ def nullspace_mod2(M):
         piv+=1
         if piv==r: break
     return E[piv:,n:]
-
-# def refine_blowdown_fan(fan1,face_fan,vectors_fine_to_add=None):
-#     """
-#     **Description:**
-#     Common refinement of the simplicial fan fan1 = {rho_+, r} * facefan(nabla_fib) and face_fan = facefan(nabla^circ).
-#     A cone C1 of fan1 lying in a single cone C2 of face_fan is kept as it is. This holds for every cone containing rho_+,
-#     since nabla^circ & {u>=0} is the pyramid over nabla_fib with apex rho_+, and is verified rather than assumed. Every
-#     other C1 is intersected exactly (PPL) with each C2 that is not separated from it by a facet of C1 or of C2; the
-#     intersections of dimension dim are the remaining cones. Rays of these intersections that are vectors of neither fan
-#     are appended to the vector configuration. If `vectors_fine_to_add` is None, a warning lists all appended rays;
-#     otherwise a warning is issued only for appended rays that are not in `vectors_fine_to_add`.
-#     **Arguments:**
-#     - `fan1 (Fan)`: The simplicial blow-down fan {rho_+, r} * facefan(nabla_fib).
-#     - `face_fan (Fan)`: The face fan of nabla^circ.
-#     - `vectors_fine_to_add (ArrayLike, optional)`: Rays of neither fan that are expected to be needed by the refinement.
-#       Appended rays contained in this list do not trigger a warning.
-#     **Returns:**
-#     - `Fan`: The common refinement (cones in general not simplicial).
-#     """
-#     d=fan1.dim
-#     vecs=[tuple(map(int,v)) for v in fan1.vc.vectors()]
-#     vecs+=[t for t in (tuple(map(int,v)) for v in face_fan.vc.vectors()) if t not in vecs]
-#     row={t:k for k,t in enumerate(vecs)}
-#     def label(w):
-#         t=tuple(map(int,w))
-#         if t not in row: row[t]=len(row)
-#         return row[t]+1
-#     C1=fan1.cones()
-#     R1=np.array([fan1.vectors(c) for c in C1],dtype=np.int64).transpose(0,2,1)
-#     det=np.abs(np.rint(np.linalg.det(R1))).astype(np.int64)
-#     H1=np.rint(np.linalg.inv(R1)*det[:,None,None]).astype(np.int64)
-#     if not np.all(H1@R1==det[:,None,None]*np.eye(d,dtype=np.int64)): raise ValueError("Inexact adjugate of a cone of fan1.")
-#     W2=[np.array(face_fan.vectors(c),dtype=np.int64) for c in face_fan.cones()]
-#     H2=[dualize(W).astype(np.int64) for W in W2]
-#     inside=np.zeros((len(C1),len(W2)),dtype=bool); sep=np.zeros((len(C1),len(W2)),dtype=bool)
-#     for j,(W,H) in enumerate(zip(W2,H2)):
-#         E=np.einsum('kd,ndr->nkr',H,R1)
-#         inside[:,j]=(E>=0).all(axis=(1,2))
-#         sep[:,j]=(E<=0).all(axis=2).any(axis=1)|(np.einsum('nid,md->nim',H1,W)<=0).all(axis=2).any(axis=1)
-#     cones=[c for c,k in zip(C1,inside.any(axis=1)) if k]
-#     for i in np.flatnonzero(~inside.any(axis=1)):
-#         for j in np.flatnonzero(~sep[i]):
-#             rays=dualize(np.vstack((H2[j],H1[i])))
-#             if np.linalg.matrix_rank(rays)==d: cones.append(tuple(sorted(label(r) for r in rays)))
-#     if len(row)>len(vecs):
-#         added=list(row)[len(vecs):]
-#         if vectors_fine_to_add is None:
-#             warnings.warn(f"The refinement needs {len(added)} rays of neither fan: {added}")
-#         else:
-#             expected={tuple(map(int,v)) for v in vectors_fine_to_add}
-#             unexpected=[t for t in added if t not in expected]
-#             if unexpected: warnings.warn(f"The refinement needs {len(unexpected)} rays of neither fan that are not in vectors_fine_to_add: {unexpected}")
-#     return Fan(vc=VectorConfiguration(np.array(list(row))),cones=cones)
-
-
-# def blow_down_fan(F):
-#     fiber_points=np.concatenate((F.intersecting_divisors_M()[F.intersecting_divisors_M()@F.u==0],F._missing_points()),axis=0)
-#     f_fib=face_fan(Polytope(fiber_points),simplicial=True)
-#     f_fib=refine_fan(f_fib,fiber_points)
-#     rhos=np.zeros((2,F.ambient_dim_base()+2),dtype=int)
-#     rhos[:,-2:]=np.array([[1,-1],[-2,5]])
-#     vc_bd=VectorConfiguration(np.concatenate((f_fib.vectors(),rhos),axis=0))
-#     indp=len(f_fib.vectors())+1
-#     indm=indp+1
-#     cones_bd=set()
-#     for c in f_fib.cones():
-#         cones_bd.add(c+(indp,))
-#         cones_bd.add(c+(indm,))
-#     fan_bd=Fan(vc_bd,cones=cones_bd)
-#     return fan_bd
 
 def solve_integer(M, b):
     """
@@ -6662,51 +6582,6 @@ def glsm_from_refinement(F):
     Q=np.concatenate((Qb_intersecting,Qd7_intersecting,qfinal,Qd7_not_intersecting,Qb_not_intersecting),axis=0)
     if (Q@V).any(): raise ValueError("The charge matrix does not annihilate the vectors.")
     return (Q,(len(Qb_intersecting),len(Qd7_intersecting),1,len(Qd7_not_intersecting),len(Qb_not_intersecting)))
-
-# def glsm_from_refinement(F):
-#     D7s=F.vectors_M_conv_toric_fan()[F.vectors_M_conv_toric_fan()@F.u<0]
-#     D7s_intersecting=F.intersecting_divisors_M()[F.intersecting_divisors_M()@F.u<0]
-#     D7s_not_intersecting=row_difference(D7s,D7s_intersecting)
-#     rhom=np.zeros(D7s.shape[1],dtype=int)
-#     y=rhom.copy()
-#     y[-1]=-1
-#     rhom[-2:]=np.array([-2,5])
-#     ind=get_index(D7s,rhom)[0]
-#     D7s=np.delete(D7s,ind,0)
-#     f_bd=F.blow_down_fan()
-#     Qb=glsm_from_points(f_bd.vectors()[:-2])
-#     bdlen=Qb.shape[1]+2
-#     Qb=np.concatenate((Qb,np.zeros((Qb.shape[0],len(D7s)+2),dtype=int)),axis=1)
-#     Qd7_intersecting=np.zeros((len(D7s_intersecting),Qb.shape[1]),dtype=int)
-#     for i,d7 in enumerate(D7s_intersecting):
-#         c7=np.array(list(find_cone(d7,f_bd.cones(),f_bd.vectors())))
-#         c7_vecs=f_bd.vectors(c7)
-#         sol=solve_integer(c7_vecs.T,2*d7)
-#         if np.all(sol%2==0):
-#             sol=np.rint(sol/2).astype(int)
-#             Qd7_intersecting[i,bdlen+i]=-1
-#         else:
-#             Qd7_intersecting[i,bdlen+i]=-2
-#         Qd7_intersecting[i,c7-1]=sol
-#     Qd7_not_intersecting=np.zeros((len(D7s_not_intersecting),Qb.shape[1]),dtype=int)
-#     for i,d7 in enumerate(D7s_not_intersecting):
-#         c7=np.array(list(find_cone(d7,f_bd.cones(),f_bd.vectors())))
-#         c7_vecs=f_bd.vectors(c7)
-#         sol=solve_integer(c7_vecs.T,2*d7)
-#         if np.all(sol%2==0):
-#             sol=np.rint(sol/2).astype(int)
-#             Qd7_not_intersecting[i,bdlen+i]=-1
-#         else:
-#             Qd7_not_intersecting[i,bdlen+i]=-2
-#         Qd7_not_intersecting[i,c7-1]=sol
-#     qfinal=np.zeros((1,Qd7.shape[1]),dtype=int)
-#     indy=get_index(f_bd.vectors(),y)[0]
-#     qfinal[0,indy]=3
-#     qfinal[0,bdlen-2]=2
-#     qfinal[0,bdlen-1]=1
-#     vecs_tot=np.concatenate((f_bd.vectors(),D7s),axis=0)
-#     Q=np.concatenate((Qb,Qd7_intersecting,Qd7_not_intersecting,qfinal),axis=0)
-#     return (Q,vecs_tot,Qb.shape[0],Qd7_not_intersecting.shape[0])
 
 def _left_kernel_mod_p(M,p):
     """
@@ -6961,7 +6836,7 @@ def common_fan_refinement(fan1,face_fan,vectors_fine_to_add=None,simplicial=Fals
         return make_simplicial(Fan(vc=VectorConfiguration(np.array(list(row))),cones=cones))
     return Fan(vc=VectorConfiguration(np.array(list(row))),cones=cones)
 
-def compute_D7_GV(F,Q=None,INQ=None,IN_surfaces=None,hilbert_basis=False,min_points=600,max_deg=2):
+def compute_d7_gv(F,Q=None,INQ=None,IN_surfaces=None,hilbert_basis=False,min_points=600,max_deg=2,target_points=None):
     Q,sizes=glsm_from_refinement(F)
     d7_rows=np.arange(sizes[0],sizes[0]+sizes[1])
     q,order_dict=saturate_glsm(Q,protected_rows=d7_rows,return_combinations=True)
@@ -6974,5 +6849,5 @@ def compute_D7_GV(F,Q=None,INQ=None,IN_surfaces=None,hilbert_basis=False,min_poi
     gvec_face=MC_face.find_grading_vector()
     IN_surf,surf_dict=intersection_number_surfaces(INq,q.shape[0])
     nef_part_GV=F.nef_partition_M(toric_fan_adapted=True,zero_based=True,as_divisors=False)
-    gv=compute_gv(generators=gens,min_points=min_points,grading_vector=gvec_face,q=q,intnums=IN_surf,max_deg=max_deg,nefpart=nef_part_GV)
+    gv=compute_gv(generators=gens,min_points=min_points,grading_vector=gvec_face,q=q,intnums=IN_surf,max_deg=max_deg,nefpart=nef_part_GV,target_points=target_points)
     return gv

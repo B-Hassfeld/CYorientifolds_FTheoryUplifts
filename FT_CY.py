@@ -38,6 +38,7 @@ import pyarrow as pa
 from cytools import Polytope, fetch_polytopes
 from cytools.vector_config import VectorConfiguration
 from cytools.vector_config.fan import Fan
+from cygv import compute_gv
 # from cytools.f_theory import Uplift_functions as UF
 from . import Uplift_functions as UF
 from numpy.typing import ArrayLike
@@ -684,10 +685,6 @@ class F_Theory_Uplift():
         self.__smooth_uplift_toric_fan = None
         self.__vertices_W_not_intersecting=None
         self.__vertices_B_not_intersecting=None
-        self.x = None
-        self.y = None
-        self.z = None
-        self.u = None
         self.__h11 = None
         self.__h31 = None
         self.__h21 = None
@@ -706,6 +703,13 @@ class F_Theory_Uplift():
         self.__intersection_numbers_N=None
         self.__intersection_numbers_M=None
         self.__hodge_numbers = None
+        self.__Qd7=None
+        self.__Qsat=None
+        self.__MC_face=None
+        self.__intersection_numbers_Qsat=None
+        self.__intersection_numbers_surfaces_sat=None
+        self.sizes=None
+
         match orientifold_or_points:
             case CY_orientifold():
                 self.__CY_orientifold = orientifold_or_points
@@ -718,7 +722,6 @@ class F_Theory_Uplift():
         self.y[-2:]=[-2,-1]
         self.z[-2:]=[0,1]
         self.u=self.x+self.y
-
     def __set_divisor_representations(self) -> None:
         """
         **Description:**
@@ -2265,6 +2268,42 @@ class F_Theory_Uplift():
             self.__intersection_numbers_M=UF.subvariety_intersection_numbers(self.M_conv_toric_fan(),[LB1,LB2],self.basis_homology_M(),tol=tol,decimals=decimals)
         return self.__intersection_numbers_M
 
+    def Qd7(self):
+        if self.__Qd7 is None:
+            self.__Qd7,self.sizes=UF.glsm_from_refinement(self)
+        return self.__Qd7
+
+    def Qsat(self):
+        if self.__Qsat is None:
+            self.__Qsat=UF.saturate_glsm(self.Qd7(),np.arange(self.sizes[0],self.sizes[0]+self.sizes[1]))
+        return self.__Qsat
+    
+    def intersection_numbers_Qsat(self):
+        if self.__intersection_numbers_Qsat is None:
+            self.__intersection_numbers_Qsat=UF.tensor_symm_in_basis(self.intersection_numbers_M(),self.basis_homology_M(),self.Qsat(),in_prime_basis=True)
+        return self.__intersection_numbers_Qsat
+
+    def mori_cone_face_d7(self):
+        if self.__MC_face is None:
+            self.__MC_face=UF.mori_cone_in_glsm_basis(self.Qsat(),self.M_conv_toric_fan(),sub_rows=np.arange(self.sizes[0],self.sizes[0]+self.sizes[1]),as_face_in_higher_dim_ambient=True)
+        return self.__MC_face
+
+    def compute_d7_gv(self,hilbert_basis=False,min_points=600,max_deg=2,target_points=None):
+        if hilbert_basis:
+            gens=self.mori_cone_face_d7().hilbert_basis()
+        else:
+            gens=self.mori_cone_face_d7().rays()
+        gv=compute_gv(generators=gens,min_points=min_points,grading_vector=self.mori_cone_face_d7().find_grading_vector(),q=self.Qsat(),intnums=self.intersection_numbers_surfaces_sat()[0],max_deg=max_deg,nefpart=self.nef_partition_M(zero_based=True,toric_fan_adapted=True),target_points=target_points)
+        return gv
+        
+    def intersection_numbers_surfaces_sat(self):
+        if self.__intersection_numbers_surfaces_sat is None:
+            self.__intersection_numbers_surfaces_sat=UF.intersection_number_surfaces(self.intersection_numbers_Qsat(),self.Qsat().shape[0])
+        return self.__intersection_numbers_surfaces_sat
+
+
+
+
 def fetch_orientifolds(only_regular: bool=True, only_nef_decomposition: bool=False,h11: int | None = None,h12: int | None = None,h13: int | None = None,
     h21: int | None = None,h22: int | None = None,h31: int | None = None,chi: int | None = None,
     lattice: str = 'N',dim: int = 4,n_points: int | None = None,n_vertices: int | None = None,
@@ -2529,3 +2568,5 @@ def fetch_nef_partition_uplifts(h11: int | None = None,h21: int | None = None,li
 
     return result.to_pandas() if as_pandas else result
 
+
+    
