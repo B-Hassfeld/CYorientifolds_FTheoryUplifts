@@ -6215,79 +6215,167 @@ def is_lattice_newton_polytope(rays,weights):
         P.add_constraint(ppl.Linear_Expression(list(ray),weight)>=0)
     return (not P.is_empty() and P.is_bounded() and all(v.divisor()==1 for v in P.minimized_generators()))
 
-def fix_tau_row(Q,IN,d7_rows,invariant_rows=None,tol=1e-4,decimals=10):
+def _solve_rational(A,b):
     """
     **Description:**
-    Fixes the ambiguity q_tau -> q_tau + n^mu q_mu of the tau row (last row) of an adapted GLSM by Weyl invariance of the tau curve class, which reduces to
-        kappa_{ijk mu} = n_mu kappa_{ijk tau}   for all invariant triples (i,j,k) and D7 directions mu.
-    With K_{(ijk),mu}=kappa_{ijk mu}, k3_{ijk}=kappa_{ijk tau}, n is determined on V' = ker(|k3|^2 K - k3 k3^T K) (all of span(C_mu) iff the enhancement is
-    semisimple) by n(v) = k3.Kv/|k3|^2; on the complement (Weyl-invariant, abelian directions) the shift is a convention, fixed here by integrality:
-    n takes values in Z/gcd(k3) on the saturated lattice V'_Z, k is the minimal integer with k n(V'_Z) in Z, and k n is an integer extension (it exists
-    since V'_Z is a direct summand), shortened along the free directions. The new tau row is k*q_tau + sum_mu k n_mu q_mu, so that
-    z'^tau = k z^tau + sum_mu k n_mu z^mu is the axio-dilaton. In the dual basis J'^mu = J^mu - n_mu J^tau, J'^tau = J^tau/k (others unchanged) one has kappa'_{ijk mu}=0, kappa'_{ijk tau'} = kappa_{ijk tau}/k.
+    Exact rational solution x of A @ x = b by Gauss-Jordan elimination over the rationals, for a matrix with linearly independent columns.
+    **Arguments:**
+    - `A (ArrayLike)`: Integer or rational matrix with linearly independent columns.
+    - `b (ArrayLike)`: Integer or rational right-hand side.
+    **Raises:**
+    - `ValueError`: If the columns are dependent or the system is inconsistent.
+    **Returns:**
+    - `np.ndarray`: The solution as an object array of `Fraction`s.
+    """
+    A=np.asarray(A,dtype=object); b=np.asarray(b,dtype=object); m,n=A.shape
+    M=[[Fraction(x) for x in A[i]]+[Fraction(b[i])] for i in range(m)]; piv=[]; r=0
+    for j in range(n):
+        p=next((i for i in range(r,m) if M[i][j]!=0),None)
+        if p is None: raise ValueError("The columns of A are linearly dependent.")
+        M[r],M[p]=M[p],M[r]; inv=1/M[r][j]; M[r]=[x*inv for x in M[r]]
+        for i in range(m):
+            if i!=r and M[i][j]!=0:
+                f=M[i][j]; M[i]=[x-f*y for x,y in zip(M[i],M[r])]
+        piv.append(j); r+=1
+    if any(M[i][n]!=0 for i in range(r,m)): raise ValueError("The system A @ x = b has no solution.")
+    x=np.array([Fraction(0)]*n,dtype=object)
+    for i,j in enumerate(piv): x[j]=M[i][n]
+    return x
+
+def _integer_preimage(P,b):
+    """
+    **Description:**
+    Integer solution x of P @ x = b for an integer matrix P whose rows span a saturated lattice (so that P: Z^n -> Z^q is surjective),
+    via the Hermite normal form of P^T.
+    **Arguments:**
+    - `P (ArrayLike)`: Integer matrix with linearly independent rows spanning a saturated lattice.
+    - `b (ArrayLike)`: Integer right-hand side.
+    **Returns:**
+    - `np.ndarray`: An integer solution x.
+    """
+    P=np.asarray(P,dtype=int); q=len(P)
+    H,U=hnf(P.T,return_transform=True)
+    if not (H[:q]==np.eye(q,dtype=int)).all(): raise ValueError("The rows of P do not span a saturated lattice.")
+    return U[:q].T.astype(object)@np.asarray(b,dtype=object)
+
+def fix_tau_row(Q,IN,sizes,Q_sat=None,tol=1e-6,decimals=10,max_denominator=10**6):
+    """
+    **Description:**
+    Fixes the ambiguity q_tau -> q_tau + n^mu q_mu of the tau row of the GLSM of `glsm_from_refinement` by Weyl invariance of the tau curve class, which reduces to
+        kappa_{ijk mu} = n_mu kappa_{ijk tau}   for all triples (i,j,k) of intersecting fiber rows and intersecting D7 rows mu
+    (the non-intersecting rows carry no intersection numbers, so n vanishes on the non-intersecting D7 rows and they are not touched).
+    With K_{(ijk),mu}=kappa_{ijk mu}, k3_{ijk}=kappa_{ijk tau} (both rational; each triple is scaled to integers), n is determined on
+    V' = ker(|k3|^2 K - k3 k3^T K) (all of span(C_mu) iff the enhancement is semisimple) by n(v) = k3.Kv/|k3|^2; on the complement (Weyl-invariant, abelian
+    directions, `free`) the shift is a convention. The new tau class
+        C'_tau = k (C_tau + sum_mu n_mu C_mu)
+    is required to be a primitive element of the saturated relation lattice spanned by the rows of `Q_sat` (the full H_2 lattice, which the rows of `Q` need not
+    generate): with a, C_mu the coordinates of the tau and D7 rows in that lattice and W the free directions, the minimal positive rational k with
+    k(a + C n_0 + C W^T lambda) integral for some lambda is k = lcm(denominators)/gcd(numerators) of P(a + C n_0), where P is an integral basis of the annihilator of
+    C W^T; the resulting integral vector is automatically primitive, and among the admissible lambda the one with the shortest n is chosen. Since the D7 rows of `Q`
+    need not generate a saturated sublattice, k n_mu is in general not an integer (e.g. C'_tau = C_tau + sum_mu C_mu/2 with k = 1); the new tau row is nevertheless
+    an integer vector, computed in the basis of `Q_sat`. In the dual basis J'^mu = J^mu - n_mu J^tau, J'^tau = J^tau/k (others unchanged) one has kappa'_{ijk mu}=0,
+    kappa'_{ijk tau'} = kappa_{ijk tau}/k, and z'^tau = k z^tau + sum_mu k n_mu z^mu is the axio-dilaton.
     The intersection numbers are updated sparsely: substituting x_tau = y_tau/k - n.y_D7, an entry kappa_c with c=(rest,tau^t) contributes to
         kappa'_{sort(rest+M)} += kappa_c prod_e binom(#_e rest + #_e M, #_e M) k^{-#_tau M} prod_{mu in M}(-n_mu)
     for every multiset M of size t from {tau} u {mu : n_mu != 0}; entries without tau are unchanged.
     **Arguments:**
-    - `Q (ArrayLike)`: GLSM charge matrix [bulk | D7 | (fiber-only) | tau].
-    - `IN (Mapping[tuple[int,...],int|float])`: Integral intersection numbers in the basis dual to the rows of Q (sorted 1-based keys); all key lengths are transformed.
-    - `d7_rows (Sequence[int])`: 0-based indices of the D7 rows.
-    - `invariant_rows (Sequence[int]|None)`: 0-based rows with Weyl-invariant flat coordinates. Defaults to all rows except `d7_rows` and the last.
-    - `tol (float)`: New entries are rounded to `decimals`, values within `tol` of an integer are set to it, and entries with |value| <= tol are dropped
-      (as in `subvariety_intersection_numbers`); near-integral values are returned as int. Defaults to `1e-5`.
+    - `Q (ArrayLike)`: GLSM charge matrix of `glsm_from_refinement` (rows [intersecting fiber | intersecting D7 | tau | non-intersecting D7 | completing fiber]),
+      possibly after a change of basis within the D7 rows (`symmetric_d7_basis`).
+    - `IN (Mapping[tuple[int,...],int|float])`: Intersection numbers in the basis dual to the rows of Q (sorted 1-based keys), e.g.
+      `_tensor_symm_in_glsm_basis(F.intersection_numbers_M(),Q,F.basis_homology_M())`; they may be rational. All key lengths are transformed.
+    - `sizes (Sequence[int])`: The block sizes returned by `glsm_from_refinement`; the tau row is `sizes[0]+sizes[1]`.
+    - `Q_sat (ArrayLike|None)`: A basis of the saturated relation lattice, e.g. `saturate_glsm(Q)`; computed if `None`. Only the lattice matters, not the basis.
+    - `tol (float)`: Intersection numbers are rationalised with `max_denominator` and must be reproduced within `tol`. New entries are rounded to `decimals`, values
+      within `tol` of an integer are set to it, and entries with |value| <= tol are dropped (as in `subvariety_intersection_numbers`). Defaults to `1e-6`.
     - `decimals (int)`: Number of decimals to round to. Defaults to `10`.
+    - `max_denominator (int)`: Largest denominator allowed when rationalising the intersection numbers. Defaults to `10**6`.
+    **Raises:**
+    - `ValueError`: If `sizes` does not match `Q`, an intersection number is not rational within `tol`, kappa_{ijk tau} vanishes identically or the tau class is a
+      combination of free D7 directions.
     **Returns:**
-    - `tuple`: (Q_new, IN_new, k, n, free) with IN_new values int (near-integral) or float, n a float array, free an integer basis (rows) of the shifts of n not fixed by the
-      condition (empty iff the fix is unique).
+    - `tuple`: (Q_new, IN_new, k, n, free): `Q_new` is `Q` with the tau row replaced; `IN_new` the intersection numbers in the new dual basis (int if near-integral,
+      else float); `k` the scaling (int if integral, else float); `n` the float shift vector over the intersecting D7 rows `sizes[0]..sizes[0]+sizes[1]-1`;
+      `free` an integer basis (rows, same coordinates as `n`) of the shifts of n not fixed by the condition (empty iff the fix is unique).
     """
-    Q=np.asarray(Q,dtype=int); N=len(Q); d7=[int(i)+1 for i in d7_rows]; m=len(d7)
-    inv=set(range(1,N))-set(d7) if invariant_rows is None else {int(i)+1 for i in invariant_rows}
-    pos={a:i for i,a in enumerate(d7+[N])}; R={}
+    Q=np.asarray(Q,dtype=int); s=tuple(int(x) for x in sizes)
+    if len(s)!=5 or s[2]!=1 or sum(s)!=len(Q): raise ValueError("sizes must be the five block sizes of glsm_from_refinement and sum to the number of rows of Q.")
+    t=s[0]+s[1]; d7=list(range(s[0],t)); m=s[1]; N=t+1; inv=set(range(1,s[0]+1))
+    pos={a+1:i for i,a in enumerate(d7)}; pos[N]=m
+    def frac(v):
+        f=Fraction(v).limit_denominator(max_denominator)
+        if abs(float(f)-v)>tol: raise ValueError(f"The intersection number {v} is not rational with denominator <= {max_denominator}.")
+        return f
+    R={}
     for key,v in IN.items():
+        if len(key)!=4: continue
         x=[a for a in key if a in pos]
-        if len(key)==4 and len(x)==1:
-            s=list(key); s.remove(x[0])
-            if inv.issuperset(s): R.setdefault(tuple(s),np.zeros(m+1))[pos[x[0]]]=v
-    R=np.rint(np.array(list(R.values())).reshape(-1,m+1)).astype(np.int64); K,k3=R[:,:m],R[:,m]; s=int(k3@k3)
-    if s==0: raise ValueError("kappa_{ijk tau} vanishes on the invariant rows")
-    V=integral_kernel(s*K-np.outer(k3,k3@K)); r=len(V)
-    free=integral_kernel(V) if r else np.eye(m,dtype=int)
-    g=np.gcd.reduce(k3); kh=k3//g
-    c,rem=np.divmod(V@K.T@kh,kh@kh); assert not rem.any()
-    d=np.gcd.reduce(np.r_[g,c]); k=int(g//d)
-    nk=np.zeros(m,dtype=int)
+        if len(x)==1:
+            rest=list(key); rest.remove(x[0])
+            if inv.issuperset(rest): R.setdefault(tuple(rest),[Fraction(0)]*(m+1))[pos[x[0]]]=frac(v)
+    rows=[]
+    for row in R.values():
+        L=math.lcm(*(f.denominator for f in row)); rows.append([int(f*L) for f in row])
+    R=np.array(rows,dtype=np.int64).reshape(-1,m+1); K,k3=R[:,:m],R[:,m]
+    if not k3.any(): raise ValueError("kappa_{ijk tau} vanishes on all triples of intersecting fiber rows.")
+    g=int(np.gcd.reduce(k3)); kh=k3//g
+    if m:
+        V=integral_kernel(int(k3@k3)*K-np.outer(k3,k3@K)); r=len(V)
+        free=integral_kernel(V) if r else np.eye(m,dtype=int)
+    else:
+        V=np.zeros((0,0),dtype=int); r=0; free=np.zeros((0,0),dtype=int)
+    n0=np.array([Fraction(0)]*m,dtype=object)
     if r:
-        H,U=hnf(V.T,return_transform=True); assert (H[:r]==np.eye(r)).all()
-        nk=U[:r].T@(c//d)
-        if len(free): nk-=free.T@np.rint(np.linalg.lstsq(free.T,nk,rcond=None)[0]).astype(int)
-    n=nk/k
-    Qn=Q.copy(); Qn[-1]=k*Q[-1]+nk@Q[np.array(d7,dtype=int)-1]
-    w={N:1/k,**{a:-x for a,x in zip(d7,n.tolist()) if x}}
+        c,rem=np.divmod(V@K.T@kh,int(kh@kh)); assert not rem.any()
+        H,U=hnf(V.T,return_transform=True); assert (H[:r]==np.eye(r,dtype=int)).all()
+        n0=U[:r].T.astype(object)@np.array([Fraction(int(ci),g) for ci in c],dtype=object)
+    # coordinates of the tau and D7 rows in the saturated lattice
+    Q_sat=saturate_glsm(Q) if Q_sat is None else np.asarray(Q_sat,dtype=int); rs=len(Q_sat)
+    coords=solve_integer(Q_sat.T,Q[[t,*d7]].T).astype(object); a,C=coords[:,0],coords[:,1:]
+    tau0=a+C@n0; f=len(free)
+    Mf=C@free.T.astype(object) if f else np.zeros((rs,0),dtype=object)
+    P=integral_kernel(Mf.T.astype(int)) if f else np.eye(rs,dtype=int)
+    Pt=P.astype(object)@tau0; nz=[Fraction(x) for x in Pt if x!=0]
+    if not nz: raise ValueError("The tau class is a combination of free D7 directions.")
+    k=Fraction(math.lcm(*(x.denominator for x in nz)),math.gcd(*(abs(x.numerator) for x in nz)))
+    z=_integer_preimage(P,[int(k*x) for x in Pt])
+    n=n0
+    if f:
+        lam=_solve_rational(Mf,z-k*tau0); n=n0+free.T.astype(object)@lam
+        S=integral_kernel(P)   # admissible changes of z; shifts of n by Wd @ c, c integer
+        D=np.array([_solve_rational(Mf,si)/k for si in S],dtype=object).T; Wd=free.T.astype(object)@D
+        cvec=np.rint(np.linalg.lstsq(Wd.astype(float),-n.astype(float),rcond=None)[0]).astype(int)
+        n=n+Wd@cvec.astype(object); z=z+S.T.astype(object)@cvec.astype(object)
+    assert all(x==y for x,y in zip(k*(a+C@n),z))
+    Qn=Q.copy(); Qn[t]=z@Q_sat.astype(object)
+    nf=np.array([float(x) for x in n]); kf=float(k)
+    w={N:1/kf,**{a+1:-x for a,x in zip(d7,nf.tolist()) if x}}
     acc=defaultdict(float)
     for key,v in IN.items():
-        r=len(key); t=key.count(N); rest=key[:r-t]; C=Counter(rest)
-        for M in combinations_with_replacement(w,t):
-            acc[tuple(sorted(rest+M))]+=v*prod(comb(C[e]+j,j)*w[e]**j for e,j in Counter(M).items())
-    v=np.round(np.fromiter(acc.values(),float,len(acc)),decimals); r=np.rint(v); isint=np.abs(v-r)<=tol
-    return Qn,{b:(int(ri) if ii else x) for b,x,ri,ii in zip(acc,v.tolist(),r.tolist(),isint.tolist()) if abs(x)>tol},k,n,free
+        r=len(key); tt=key.count(N); rest=key[:r-tt]; Cn=Counter(rest)
+        for M in combinations_with_replacement(w,tt):
+            acc[tuple(sorted(rest+M))]+=v*prod(comb(Cn[e]+j,j)*w[e]**j for e,j in Counter(M).items())
+    v=np.round(np.fromiter(acc.values(),float,len(acc)),decimals); rr=np.rint(v); isint=np.abs(v-rr)<=tol
+    IN_new={b:(int(ri) if ii else x) for b,x,ri,ii in zip(acc,v.tolist(),rr.tolist(),isint.tolist()) if abs(x)>tol}
+    return Qn,IN_new,(int(k) if k.denominator==1 else kf),nf,free
 
 def fix_tau_row_uplift(F,symmetric=True,tol=1e-6):
     """
     **Description:**
-    Applies `fix_tau_row` to the adapted GLSM of an F-theory uplift (`adapted_glsm_uplift`), with the intersection numbers
-    transformed to the basis dual to its rows and, optionally, after the change to the symmetric D7 basis of `symmetric_d7_basis`.
+    Applies `fix_tau_row` to the GLSM of `glsm_from_refinement` of an F-theory uplift, with the intersection numbers transformed to the basis dual to its rows and,
+    optionally, after the change to the symmetric D7 basis of `symmetric_d7_basis` on the intersecting D7 rows. Primitivity of the tau class is measured in the
+    saturated lattice `saturate_glsm(Q)`.
     **Arguments:**
     - `F (F_Theory_Uplift)`: The F-theory uplift.
-    - `symmetric (bool)`: Whether to first bring the D7 rows into the symmetric basis. Defaults to `True`.
-    - `tol (float)`: Tolerance passed to `symmetric_d7_basis`. Defaults to `1e-6`.
+    - `symmetric (bool)`: Whether to first bring the intersecting D7 rows into the symmetric basis. Defaults to `True`.
+    - `tol (float)`: Tolerance passed to `symmetric_d7_basis` and `fix_tau_row`. Defaults to `1e-6`.
     **Returns:**
-    - `tuple`: `(Q_new, IN_new, k, n, free, d7_rows)`: the output of `fix_tau_row` followed by the 0-based indices of the D7 rows.
+    - `tuple`: `(Q_new, IN_new, k, n, free, sizes)`: the output of `fix_tau_row` followed by the block sizes of `glsm_from_refinement`.
     """
-    Q,rows=adapted_glsm_uplift(F,return_rows=True); d7=rows["d7"]
+    Q,sizes=glsm_from_refinement(F); d7=list(range(sizes[0],sizes[0]+sizes[1]))
     IN=_tensor_symm_in_glsm_basis(F.intersection_numbers_M(),Q,F.basis_homology_M())
     if symmetric:
         res=symmetric_d7_basis(Q,IN,d7,tol=tol); Q,IN=res["Q"],res["intersection_numbers"]
-    return (*fix_tau_row(Q,IN,d7),d7)
+    return (*fix_tau_row(Q,IN,sizes,Q_sat=saturate_glsm(Q),tol=tol),sizes)
 
 def check_sen_scaling(F: "F_Theory_Uplift",Q: ArrayLike)->tuple[bool,np.ndarray]:
     """

@@ -2275,7 +2275,9 @@ class F_Theory_Uplift():
 
     def Qsat(self):
         if self.__Qsat is None:
-            self.__Qsat=UF.saturate_glsm(self.Qd7(),np.arange(self.sizes[0],self.sizes[0]+self.sizes[1]))
+            Q=self.Qd7(); s=self.sizes
+            d7_rows=np.r_[s[0]:s[0]+s[1],s[0]+s[1]+1:s[0]+s[1]+1+s[3]]
+            self.__Qsat=UF.saturate_glsm(Q,protected_rows=d7_rows)
         return self.__Qsat
     
     def intersection_numbers_Qsat(self):
@@ -2301,7 +2303,11 @@ class F_Theory_Uplift():
             self.__intersection_numbers_surfaces_sat=UF.intersection_number_surfaces(self.intersection_numbers_Qsat(),self.Qsat().shape[0])
         return self.__intersection_numbers_surfaces_sat
 
-
+    def set_Qsat(self,Qsat_new):
+        self.__Qsat=Qsat_new
+        self.__intersection_numbers_Qsat=None
+        self.__intersection_numbers_surfaces_sat=None
+        self.__MC_face=None
 
 
 def fetch_orientifolds(only_regular: bool=True, only_nef_decomposition: bool=False,h11: int | None = None,h12: int | None = None,h13: int | None = None,
