@@ -99,38 +99,6 @@ def trilayer_normal_form(p: Polytope)->Polytope:
     for i in range(1,p.ambient_dim()):
         U0[i]=U0[i]+M[i,0]*U0[0]
     return Polytope((U0@verts.T).T)
-# def compute_partition(divisors: Sequence[np.ndarray],rays: np.ndarray)->tuple[bool,np.ndarray|None]:
-#     """
-#     **Description:**
-#     Uses linear equivalence to shift a collection of toric divisors into a representation whose coefficients form a partition of the anticanonical divisor, if such a representation exists. The shift is found by solving a mixed-integer linear program; the current implementation supports exactly two divisors.
-#     **Arguments:**
-#     - `divisors (Sequence[np.ndarray])`: The divisor coefficient vectors (one integer array per divisor, in the toric prime divisor basis).
-#     - `rays (np.ndarray)`: The primitive ray generators of the toric fan, one per row.
-#     **Returns:**
-#     - `tuple[bool, np.ndarray | None]`: A pair `(exists, shifted_divisors)`, where `exists` is a boolean and `shifted_divisors` is the integer array of shifted divisors (one per row) if it exists, otherwise `None`.
-#     """
-#     null=np.zeros([rays.shape[0],rays.shape[1]],dtype=int)
-#     linear1=np.tensordot(np.identity(2,dtype=int),rays,axes=0)
-#     linear1=linear1.transpose(0,2,1,3).reshape(len(divisors)*rays.shape[0],len(divisors)*rays.shape[1])
-#     linear2=np.hstack([rays]*len(divisors))
-#     affine1=np.concatenate(divisors)
-#     affine2=sum(divisors)-1
-#     lower1=-affine1
-#     upper1=np.full_like(affine1,np.inf,dtype=float)
-#     lower2=-affine2
-#     upper2=-affine2
-#     linear=np.vstack([linear1,linear2])
-#     lower=np.concatenate([lower1,lower2])
-#     upper=np.concatenate([upper1,upper2])
-#     c=np.zeros(linear.shape[1])
-#     integrality=np.ones_like(c)
-#     constraints=LinearConstraint(linear,lower,upper)
-#     res=milp(c=np.zeros(linear.shape[1]),constraints=constraints,integrality=np.ones(linear.shape[1]),bounds=(-np.inf,np.inf))
-#     if not res.success or res.x is None:
-#         return (False,None)
-#     sol=np.rint(res.x.reshape(len(divisors),len(rays[0]))@(rays.T)+np.array(divisors)).astype(int)
-#     return (True,sol)
-
 
 ###Make lowercase Newton_Polytope->newton_polytope
 
@@ -289,188 +257,6 @@ def trilayer_5d_Ftheory_uplift(p: Polytope,verbosity: int=1)->Polytope:
     uplift_vecs=np.vstack([uplift_vecs_singular,D4res1,D4res2])
     p5=Polytope(uplift_vecs)
     return p5
-
-# def solve_over_integers(M: ArrayLike,b: ArrayLike)->tuple[bool,np.ndarray|None]:
-#     """
-#     **Description:**
-#     Uses Smith normal form to determine whether the equation `Mx=b` has an integral solution, and returns one if it exists.
-#     **Arguments:**
-#     - `M (ArrayLike)`: Integer matrix.
-#     - `b (ArrayLike)`: Integer inhomogeneous term.
-#     **Returns:**
-#     - `tuple[bool,np.ndarray|None]`: A pair `(has_solution, x)`, where `x` is an integral solution if one exists, otherwise `None`.
-#     """
-#     a,s,t=snf(M,return_decomposition=True)
-#     c=s@np.asarray(b,dtype=int)
-#     y=np.zeros(a.shape[1],dtype=int)
-#     for ii in range(np.min(a.shape)):
-#         if a[ii,ii]!=0:
-#             if c[ii]%a[ii,ii]!=0:
-#                 return (False,None)
-#             y[ii]=c[ii]//a[ii,ii]
-#     if np.all(a@y==c):
-#         return (True,t@y)
-#     else:
-#         return (False,None)
-
-# def refine_fan_old(fan,blowups_or_all_vectors=None,tol=1e-10):
-#     """
-#     **Description:**
-#     Refines a fan by successive stellar subdivisions at rays that are vectors of its configuration but not used by any cone.
-#     If `blowups_or_all_vectors` is given, its vectors that are not yet in the configuration are appended first (vectors already
-#     present are ignored, so either the new rays alone or the full list of vectors may be passed). Each unused ray is then
-#     located in the fan: the minimal cone containing it is the set of generators with positive coefficient in its (unique, for
-#     simplicial fans) expansion, and every cone containing that face is replaced by the joins of the ray with the facets of the
-#     face. For simplicial fans the point location uses the precomputed inverses of the cone matrices (fast path, with the
-#     tolerance `tol`); for non-simplicial fans `find_cone` (full-dimensional) or `find_cone_general` is used. Fans that do not
-#     span the ambient space are handled in coordinates of their linear span.
-#     **Arguments:**
-#     - `fan (Fan)`: The fan to refine. Its unused vectors are all inserted.
-#     - `blowups_or_all_vectors (ArrayLike|None)`: Vectors to add as rays before refining, one per row. Defaults to `None`.
-#     - `tol (float)`: Tolerance for the containment test and for the positivity of the expansion coefficients. Defaults to `1e-10`.
-#     **Raises:**
-#     - `ValueError`: Raised if a new ray does not lie in the linear span of the fan or is not contained in its support.
-#     **Returns:**
-#     - `Fan`: The refined fan over the enlarged vector configuration, every vector of which is now a ray. If there is nothing to
-#       insert, the fan over the (possibly enlarged) configuration is returned unchanged.
-#     """
-#     if blowups_or_all_vectors is not None:
-#         blowups=row_difference(blowups_or_all_vectors,fan.vc.vectors())
-#         all_vectors=np.concatenate((fan.vc.vectors(),blowups),axis=0)
-#         vc=VectorConfiguration(all_vectors)
-#         new_fan=Fan(vc,cones=fan.cones())
-#     else:
-#         new_fan=fan
-#         vc=fan.vc
-#     vec_diff=row_difference(vc.vectors(),new_fan.vectors())
-#     to_be_refined=set(vc.vectors_to_labels(vec_diff))
-#     if len(to_be_refined)==0:
-#         return new_fan
-#     vectors=vc.vectors()
-#     dim=fan.dim
-#     full_dim=dim==vectors.shape[1]
-#     if vc.dim!=dim:
-#         raise ValueError("The new rays do not lie in the span of the fan.")
-#     cones=set(new_fan.cones())
-#     l2c={}
-#     for c in cones:
-#         for l in c:
-#             l2c.setdefault(l,set()).add(c)
-#     fast=all(len(c)==dim for c in cones)
-#     if fast:
-#         coords=vectors.astype(float) if full_dim else vectors@np.linalg.svd(vectors.astype(float))[2][:dim].T
-#         cone_list=list(cones)
-#         cone_idx={c:i for i,c in enumerate(cone_list)}
-#         try:
-#             inv=np.linalg.inv(coords[np.array(cone_list)-1].transpose(0,2,1))
-#         except np.linalg.LinAlgError:
-#             fast=False
-#         alive=np.ones(len(cone_list),dtype=bool)
-#     for label in to_be_refined:
-#         ray=vc.vectors(label)
-#         link_base=None
-#         if fast:
-#             alive_idx=np.flatnonzero(alive)
-#             hit=np.flatnonzero(np.all(inv[alive_idx]@coords[label-1]>=-tol,axis=1))
-#             if len(hit)>0:
-#                 c=cone_list[alive_idx[hit[0]]]
-#                 coeffs=np.linalg.solve(coords[np.array(c)-1].T,coords[label-1])
-#                 link_base=tuple(l for l,x in zip(c,coeffs) if x>tol)
-#         elif full_dim:
-#             link_base=find_cone(ray,cones,vectors)
-#         else:
-#             link_base=find_cone_general(ray,cones,vectors)
-#         if link_base is None:
-#             raise ValueError(f"The ray {ray} is not contained in the support of the fan.")
-#         link_base=tuple(link_base)
-#         star=set.intersection(*(l2c[l] for l in link_base))
-#         new_cones=[]
-#         for c_old in star:
-#             cones.discard(c_old)
-#             for l in c_old:
-#                 l2c[l].discard(c_old)
-#             rest=tuple(l for l in c_old if l not in link_base)
-#             for comb in combinations(link_base,len(link_base)-1):
-#                 new_cones.append(tuple(sorted(comb+rest+(label,))))
-#         for c_new in new_cones:
-#             cones.add(c_new)
-#             for l in c_new:
-#                 l2c.setdefault(l,set()).add(c_new)
-#         if fast:
-#             alive[[cone_idx.pop(c_old) for c_old in star]]=False
-#             for c_new in new_cones:
-#                 cone_idx[c_new]=len(cone_list)
-#                 cone_list.append(c_new)
-#             try:
-#                 inv=np.concatenate((inv,np.linalg.inv(coords[np.array(new_cones)-1].transpose(0,2,1))))
-#                 alive=np.concatenate((alive,np.ones(len(new_cones),dtype=bool)))
-#             except np.linalg.LinAlgError:
-#                 fast=False
-#     return Fan(vc=vc,cones=cones)
-
-
-# def find_cone_general(new_ray: ArrayLike,current_cones: Iterable[tuple[int,...]],all_vectors: np.ndarray)->frozenset[int]|None:
-#     """
-#     **Description:**
-#     Searches the current cones (of any dimension, in any ambient space) for the first one containing `new_ray`, and returns the labels of its generators with strictly positive coefficient. Cones with linearly independent generators are tested all at once by a batched least-squares solve, cones with linearly dependent generators by non-negative least squares.
-#     For a simplicial cone the coefficients are unique, so the result is the carrier face of `new_ray`. For a non-simplicial cone the coefficients are not unique and the returned set can be a proper subset of the carrier face (e.g. a diagonal of a square face), which is then not a face of the fan.
-#     **Arguments:**
-#     - `new_ray (ArrayLike)`: The ray to locate.
-#     - `current_cones (Iterable[tuple[int,...]])`: Current cones, represented by tuples of one-indexed ray labels.
-#     - `all_vectors (np.ndarray)`: Full ray matrix.
-#     **Returns:**
-#     - `frozenset[int]|None`: The carrier face labels, or `None` if no carrier cone is found.
-#     """
-
-#     def nnls_face(cone):
-#         cone_list=list(cone)
-#         A=all_vectors[[idx-1 for idx in cone_list]].T
-#         x, residual=nnls(A,new_ray)
-#         if residual<1e-10:
-#             return frozenset(cone_list[i] for i,coeff in enumerate(x) if coeff>1e-10)
-#         return None
-#     cones=list(current_cones)
-#     for cone in cones[:20]:
-#         face=nnls_face(cone)
-#         if face is not None:
-#             return face
-#     cones=cones[20:]
-#     if len(cones)==0:
-#         return None
-#     b=np.asarray(new_ray,dtype=float)
-#     lengths=np.fromiter(map(len,cones),dtype=int,count=len(cones))
-#     independent=np.zeros(len(cones),dtype=bool)
-#     hit=np.zeros(len(cones),dtype=bool)
-#     coeffs={}
-#     for k in np.unique(lengths):
-#         if k>len(b):
-#             continue
-#         idx=np.flatnonzero(lengths==k)
-#         C=np.array(cones) if len(idx)==len(cones) else np.array([cones[i] for i in idx])
-#         A=all_vectors[C-1].transpose(0,2,1).astype(float)
-#         G=A.transpose(0,2,1)@A
-#         ind=np.linalg.det(G)>1e-9*np.prod(np.diagonal(G,axis1=1,axis2=2),axis=1)
-#         if not np.any(ind):
-#             continue
-#         idx,A,G=idx[ind],A[ind],G[ind]
-#         independent[idx]=True
-#         x=np.linalg.solve(G,(b@A)[...,None])[...,0]
-#         r=b-np.einsum('nij,nj->ni',A,x)
-#         cand=np.flatnonzero((np.linalg.norm(r,axis=1)<1e-6)&np.all(x>=-1e-6,axis=1))
-#         if len(cand)==0:
-#             continue
-#         A,G,x=A[cand],G[cand],x[cand]+np.linalg.solve(G[cand],np.einsum('nij,ni->nj',A[cand],r[cand])[...,None])[...,0]
-#         residual=np.linalg.norm(np.einsum('nij,nj->ni',A,x)-b,axis=1)
-#         ok=(residual<1e-10)&np.all(x>=-1e-10,axis=1)
-#         hit[idx[cand[ok]]]=True
-#         coeffs.update(zip(idx[cand[ok]],x[ok]))
-#     for i in np.flatnonzero(hit|~independent):
-#         if independent[i]:
-#             return frozenset(l for l,coeff in zip(cones[i],coeffs[i]) if coeff>1e-10)
-#         face=nnls_face(cones[i])
-#         if face is not None:
-#             return face
-#     return None
 
 def divisor_intersections(fan: Fan,intersection_dict: Mapping[tuple[int,...],float],divisors: Sequence[np.ndarray],basis_set: set[int],as_LLL: bool=True)->np.ndarray:
     """
@@ -725,48 +511,6 @@ def _newton_data(V: np.ndarray,D: np.ndarray)->tuple[h_polytope.HPolytope,np.nda
     W=np.asarray(NP.vertices(),dtype=int).reshape(-1,V.shape[1])
     return NP,W,(V@W.T+D[:,None])==0
 
-# def chi_hypersurface(V: ArrayLike,cones_by_dim: list[np.ndarray],divisor: ArrayLike)->int:
-#     """
-#     **Description:**
-#     Euler characteristic of the generic hypersurface in the class `divisor` of a complete simplicial toric variety, as the
-#     sum of the Kouchnirenko Euler characteristics of its intersections with all torus orbits (Danilov-Khovanskii).
-#     **Arguments:**
-#     - `V (ArrayLike)`: The rays of the fan, one per row.
-#     - `cones_by_dim (list[np.ndarray])`: All cones of the fan of dimension 1,...,dim, as returned by `_cones_by_dimension`.
-#     - `divisor (ArrayLike)`: Divisor coefficients in the basis of the rays.
-#     **Returns:**
-#     - `int`: The Euler characteristic.
-#     """
-#     V=np.asarray(V,dtype=int)
-#     _,W,E=_newton_data(V,np.asarray(divisor,dtype=int))
-#     cache={}
-#     return int(sum(_orbit_pieces(V,cones,W,E,cache)[0].sum() for cones in [np.zeros((1,0),dtype=int)]+cones_by_dim))
-
-# def find_O7_planes(O: CY_orientifold|F_Theory_Uplift)->np.ndarray:
-#     """
-#     **Description:**
-#     Finds the divisorial O7-planes from the orbifold rays alone (no fan): the rays of `vectors_orbifold()` that are odd
-#     under `orientifold_mod2_character` (their divisors are pointwise fixed) and whose divisor meets the orientifold B,
-#     i.e. at least two monomials of the orientifold line bundle survive on it. Non-divisorial O7-planes (fixed 2-cones
-#     whose stratum lies in B) need the fan, see `orientifold_fixed_locus`.
-#     **Arguments:**
-#     - `O (CY_orientifold|F_Theory_Uplift)`: The Calabi-Yau orientifold or an F-theory uplift.
-#     **Raises:**
-#     - `ValueError`: Raised if a pointwise fixed divisor is contained in B (B reducible).
-#     **Returns:**
-#     - `np.ndarray`: Sorted one-indexed labels of `vectors_orbifold()`.
-#     """
-#     O=O.orientifold() if hasattr(O,"orientifold") else O
-#     if O.line_bundle() is None:
-#         raise ValueError("The orientifold is not regular (no projected-in monomial), so B and its O7-planes are not defined.")
-#     V=np.asarray(O.vectors_orbifold(),dtype=int)
-#     _,_,E=_newton_data(V,np.asarray(O.line_bundle(),dtype=int))
-#     n_face=E.sum(axis=1)
-#     odd=(V@orientifold_mod2_character(O.xi()))%2==1
-#     if np.any(odd&(n_face==0)):
-#         raise ValueError(f"The fixed divisors {np.flatnonzero(odd&(n_face==0))+1} are contained in B.")
-#     return np.flatnonzero(odd&(n_face>=2))+1
-
 def _singular_orbits(V: np.ndarray,V_up: np.ndarray,r: np.ndarray,L: np.ndarray,NP: h_polytope.HPolytope,E: np.ndarray,cones_by_dim: list[np.ndarray])->list[tuple[tuple[int,...],str]]:
     """
     **Description:**
@@ -913,17 +657,6 @@ def _fixed_locus(O: CY_orientifold|F_Theory_Uplift,return_chi: bool=False)->dict
     O=O.orientifold() if hasattr(O,"orientifold") else O
     return O.fixed_locus(return_chi=return_chi) if hasattr(O,"fixed_locus") else orientifold_fixed_locus(O,return_chi=return_chi)
 
-# def chi_I(O: CY_orientifold|F_Theory_Uplift)->int:
-#     """
-#     **Description:**
-#     Euler characteristic of the fixed locus of the orientifold involution, chi_O7 plus the number of O3-planes
-#     (see `orientifold_fixed_locus`).
-#     **Arguments:**
-#     - `O (CY_orientifold|F_Theory_Uplift)`: The Calabi-Yau orientifold or F-theory uplift.
-#     **Returns:**
-#     - `int`: The Euler characteristic of the fixed locus.
-#     """
-#     return _fixed_locus(O)["chi_I"]
 
 def chi_O7(O: CY_orientifold|F_Theory_Uplift)->int:
     """
@@ -1052,18 +785,7 @@ def hodge_diamond_stringy(P: Polytope|ArrayLike,backend: Literal["auto","normali
         raise RuntimeError(f"inconsistent stringy Hodge numbers:\n{h}")
     return h.astype(int)
 
-# def hodge_diamond_uplift(F: F_Theory_Uplift,backend: Literal["auto","normaliz","latte","cytools"]="auto")->np.ndarray:
-#     """
-#     **Description:**
-#     Hodge diamond of the Calabi-Yau of an F_Theory_Uplift, computed from the Cayley
-#     polytope ``F.Cayley_M()`` of its Newton polytopes.
-#     **Arguments:**
-#     - `F (F_Theory_Uplift)`: The F-theory uplift; its Cayley polytope `F.Cayley_M()` is passed to `hodge_diamond_stringy`.
-#     - `backend (Literal["auto", "normaliz", "latte", "cytools"])`: Lattice-point backend, see `hodge_diamond_stringy`. Defaults to `"auto"`.
-#     **Returns:**
-#     - `np.ndarray`: The integer Hodge diamond, h[p, q] = h^{p,q}.
-#     """
-#     return hodge_diamond_stringy(F.Cayley_M(),backend)
+
 
 def hodge_diamond_cy4(P: Polytope|ArrayLike,backend: Literal["auto","normaliz","latte","cytools"]="auto")->np.ndarray:
     """
@@ -1359,73 +1081,6 @@ def sums_to_anticanonical(points: ArrayLike,divisors: ArrayLike,atol: float=1e-8
         return True, m
     return False, None
 
-# def is_partition(points: ArrayLike,divisors: ArrayLike,atol: float=1e-8)->tuple[bool,bool,np.ndarray]:
-#     """
-#     **Description:**
-#     Determine whether divisors L1,...,Lr can be shifted by principal
-#     divisors to form a partition of the anticanonical divisor.
-#     This version avoids repeated np.linalg.solve calls by computing
-#     the inverse of the basis matrix only once.
-#     **Arguments:**
-#     - `points (ArrayLike)`: The ray generators of the toric fan, one per row.
-#     - `divisors (ArrayLike)`: The coefficient vectors of L1,...,Lr in the prime toric divisor basis, one per row.
-#     - `atol (float)`: Numerical tolerance for the integrality checks. Defaults to `1e-8`.
-#     **Returns:**
-#     - `tuple[bool,bool,np.ndarray]`: `(is_partition, sums_to_anticanonical, shifts)`, where `shifts` is the integer (r, dim) array of shift vectors m_a such that `divisors[a] + points@shifts[a]` form the partition (if no partition exists, all shifts are zero except possibly the last row).
-#     """
-#     points=np.asarray(points,dtype=int)
-#     divisors=np.asarray(divisors,dtype=int)
-#     r, n_rays=divisors.shape
-#     dim=points.shape[1]
-#     sta, total_shift=sums_to_anticanonical(points,divisors,atol=atol)
-#     if not sta:
-#         return False, False, np.zeros((r,dim),dtype=int)
-#     basis_indices=np.asarray(basis(points),dtype=int)
-#     B=points[basis_indices].astype(float)
-#     try:
-#         B_inv=np.linalg.inv(B)
-#     except np.linalg.LinAlgError:
-#         return False, True, np.zeros((r,dim),dtype=int)
-#     divisors_B=divisors[:,basis_indices]
-#     for assignment in product(range(r),repeat=dim):
-#         assignment=np.asarray(assignment)
-#         shifts=np.zeros((r,dim),dtype=int)
-#         valid=True
-#         for a in range(r-1):
-#             target=(assignment==a).astype(float)
-#             rhs=target-divisors_B[a]
-#             m_float=B_inv@rhs
-#             m=np.rint(m_float).astype(int)
-#             if not np.allclose(m_float,m,atol=atol,rtol=0):
-#                 valid=False
-#                 break
-#             shifts[a]=m
-#         if not valid:
-#             continue
-#         shifts[-1]=(total_shift-np.sum(shifts[:-1],axis=0))
-#         shifted=divisors+shifts@points.T
-#         if not np.all((shifted==0)|(shifted==1)):
-#             continue
-#         if not np.all(np.sum(shifted,axis=0)==1):
-#             continue
-#         return True, True, shifts
-#     shifts=np.zeros((r,dim),dtype=int)
-#     shifts[-1]=total_shift
-#     return False, True, shifts
-
-# def chi_fourfold_uplift(F: F_Theory_Uplift)->int:
-#     """
-#     **Description:**
-#     Euler characteristic of the Calabi-Yau fourfold of an F-theory uplift: the toric localization `cicy4_chern_toric_uplift(F,4)` plus 6 times the number of O3-planes `chi_O3`.
-#     **Arguments:**
-#     - `F (F_Theory_Uplift)`: The F-theory uplift.
-#     **Returns:**
-#     - `int`: The Euler characteristic.
-#     """
-#     chi_loc=toric_chern_class_uplift(F,4)
-#     n_O3=chi_O3(F)
-#     return chi_loc+n_O3*6
-
 def toric_chern_class_uplift(F: F_Theory_Uplift,n: int)->int|dict[tuple[int,...],int]|dict[int,int]:
     """
     **Description:**
@@ -1668,32 +1323,6 @@ def cygv_intnums_prime_surfaces(IN4: Mapping[tuple[int,...],int|float],Q: ArrayL
                     intnums[(s,i,j)]=int(val)
     return intnums, surface_map
 
-# def divisor_in_zero_one_rep_numpy(points: ArrayLike,a: ArrayLike,atol: float=1e-8)->tuple[np.ndarray,np.ndarray]|tuple[None,None]:
-#     """
-#     **Description:**
-#     Shift divisor a by a principal divisor m (b = a + points@m) so that b has
-#     coefficients in {0,1}. Returns (b,m) or (None,None) if impossible.
-#     **Arguments:**
-#     - `points (ArrayLike)`: The ray generators of the toric fan, one per row.
-#     - `a (ArrayLike)`: The integer divisor coefficients, one per ray.
-#     - `atol (float)`: Tolerance for the integrality of the shift. Defaults to `1e-8`.
-#     **Returns:**
-#     - `tuple[np.ndarray,np.ndarray]|tuple[None,None]`: `(b, m)` with integer arrays b (coefficients in {0,1}) and m, or `(None, None)`.
-#     """
-#     points=np.asarray(points,dtype=int)
-#     a=np.asarray(a,dtype=int)
-#     dim=points.shape[1]
-#     if np.all((a==0)|(a==1)):
-#         return a.copy(),np.zeros(dim,dtype=int)
-#     S=np.asarray(basis(points),dtype=int)
-#     B_inv=np.linalg.inv(points[S].astype(float))
-#     T=(np.arange(2**dim)[:,None]>>np.arange(dim))&1
-#     M=(T-a[S])@B_inv.T
-#     Mi=np.rint(M).astype(int)
-#     b=a+Mi@points.T
-#     ok=np.all(np.abs(M-Mi)<atol,axis=1)&np.all((b==0)|(b==1),axis=1)
-#     i=np.flatnonzero(ok)
-#     return (b[i[0]],Mi[i[0]]) if len(i) else (None,None)
 
 def divisor_in_zero_one_rep(rays: ArrayLike,a: ArrayLike)->tuple[np.ndarray,np.ndarray]|tuple[None,None]:
     """
@@ -1785,26 +1414,6 @@ def kernel_hnf_N(V,cols):
     KN=-(K@Gam); assert not (KN%D).any()
     H=np.zeros((len(P),len(V)),int); H[:,cols[P]]=K; H[:,cols[N]]=KN//D
     return H,cols[P]
-
-
-
-
-
-# def symmetric_glsm_uplift(F: F_Theory_Uplift,tol: float=1e-6)->dict[str,Any]:
-#     """
-#     **Description:**
-#     Applies `symmetric_d7_basis` to the adapted GLSM of an F-theory uplift. The D7 rows are the rows of `adapted_glsm_uplift(F)` between the bulk rows and the final tau row (one per special fiber point other than b0).
-#     **Arguments:**
-#     - `F (F_Theory_Uplift)`: The F-theory uplift.
-#     - `tol (float)`: Tolerance for comparing intersection numbers. Defaults to `1e-6`.
-#     **Returns:**
-#     - `dict[str,Any]`: The output of `symmetric_d7_basis`, with the additional key `d7_rows`.
-#     """
-#     Q,rows=adapted_glsm_uplift(F,return_rows=True)
-#     d7=rows["d7"]
-#     IN=_tensor_symm_in_glsm_basis(F.intersection_numbers_M(),Q,F.basis_homology_M())
-#     res=symmetric_d7_basis(Q,IN,d7,tol=tol)
-#     return (res["Q"],res["intersection_numbers"],res["index"])
 
 def gram_matrix(IN_in_basis: Mapping[tuple[int,...],int|float])->tuple[np.ndarray,dict[tuple[int,int],int],dict[int,tuple[int,int]]]:
     """
@@ -2091,27 +1700,6 @@ def nullspace_mod2(M):
         if piv==r: break
     return E[piv:,n:]
 
-# def solve_integer(M, b):
-#     """
-#     **Description:**
-#     Integer solution x of the linear system M @ x = b for a matrix with linearly independent columns: the (unique) real
-#     least-squares solution is rounded and verified exactly in arbitrary-precision integer arithmetic.
-#     **Arguments:**
-#     - `M (ArrayLike)`: Integer matrix with linearly independent columns.
-#     - `b (ArrayLike)`: Integer right-hand side.
-#     **Raises:**
-#     - `ValueError`: Raised if the columns of `M` are linearly dependent or the rounded solution does not solve the system exactly
-#       (no integer solution exists).
-#     **Returns:**
-#     - `np.ndarray`: The integer solution x.
-#     """
-#     M, b = np.asarray(M), np.asarray(b)
-#     x, _, rank, _ = np.linalg.lstsq(M, b, rcond=None)
-#     if rank < M.shape[1]: raise ValueError("M must have linearly independent columns.")
-#     x = np.rint(x).astype(np.int64)
-#     if not np.array_equal(M.astype(object) @ x, b.astype(object)): raise ValueError("Rounded solution failed the exact check.")
-#     return x
-
 def glsm_from_refinement(F):
     """
     **Description:**
@@ -2181,7 +1769,7 @@ def glsm_from_refinement(F):
     qfinal=np.zeros((1,n),dtype=int); qfinal[0,c(y)]=3; qfinal[0,c(rhop)]=2; qfinal[0,c(rhom)]=1
     Q=np.concatenate((Qb_intersecting,Qd7_intersecting,qfinal,Qd7_not_intersecting,Qb_not_intersecting),axis=0)
     if (Q@V).any(): raise ValueError("The charge matrix does not annihilate the vectors.")
-    return (Q,(len(Qb_intersecting),len(Qd7_intersecting),1,len(Qd7_not_intersecting),len(Qb_not_intersecting)))
+    return (Q,np.array([len(Qb_intersecting),len(Qd7_intersecting),1,len(Qd7_not_intersecting),len(Qb_not_intersecting)]))
 
 def _left_kernel_mod_p(M,p):
     """

@@ -725,7 +725,7 @@ class F_Theory_Uplift():
         self.__MC_face=None
         self.__intersection_numbers_Qsat=None
         self.__intersection_numbers_surfaces_sat=None
-        self.sizes=None
+        self.__sizes=None
 
         match orientifold_or_points:
             case CY_orientifold():
@@ -2287,16 +2287,25 @@ class F_Theory_Uplift():
 
     def Qd7(self):
         if self.__Qd7 is None:
-            self.__Qd7,self.sizes=UF.glsm_from_refinement(self)
+            self.__Qd7,self.__sizes=UF.glsm_from_refinement(self)
         return self.__Qd7
 
     def Qsat(self):
         if self.__Qsat is None:
-            Q=self.Qd7(); s=self.sizes
+            Q=self.Qd7(); s=self.sizes()
             d7_rows=np.r_[s[0]:s[0]+s[1],s[0]+s[1]+1:s[0]+s[1]+1+s[3]]
             self.__Qsat=UF.saturate_glsm(Q,protected_rows=d7_rows)
         return self.__Qsat
     
+    def sizes(self):
+        if self.__sizes is None:
+            h21m=self.hodge_numbers_orientifold().get('h21-')
+            sizes=np.array([h21m,self.h31()-1-h21m,1,len(UF.row_difference(self.pol_W_M().vertices(),self.intersecting_divisors_W_M())),0])
+            sizes[-1]=self.vectors_M_conv_toric_fan().shape[0]-np.sum(sizes[:-1])-6
+            self.__sizes=sizes
+        return self.__sizes
+
+
     def intersection_numbers_Qsat(self):
         if self.__intersection_numbers_Qsat is None:
             self.__intersection_numbers_Qsat=UF.tensor_symm_in_basis(self.intersection_numbers_M(),self.basis_homology_M(),self.Qsat(),in_prime_basis=True)
@@ -2304,7 +2313,7 @@ class F_Theory_Uplift():
 
     def mori_cone_face_d7(self, check_face=False):
         if self.__MC_face is None:
-            self.__MC_face=UF.mori_cone_in_glsm_basis(self.Qsat(),self.M_conv_toric_fan(),sub_rows=np.arange(self.sizes[0],self.sizes[0]+self.sizes[1]),as_face_in_higher_dim_ambient=True,check_face=check_face)
+            self.__MC_face=UF.mori_cone_in_glsm_basis(self.Qsat(),self.M_conv_toric_fan(),sub_rows=np.arange(self.sizes()[0],self.sizes()[0]+self.sizes()[1]),as_face_in_higher_dim_ambient=True,check_face=check_face)
         return self.__MC_face
 
     def compute_d7_gv(self,hilbert_basis=False,min_points=600,max_deg=2,target_points=None):
