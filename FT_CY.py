@@ -25,7 +25,6 @@ from __future__ import annotations
 # 'standard' imports
 import warnings
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Any
 
 # 3rd party imports
 import numpy as np
@@ -42,9 +41,6 @@ from cygv import compute_gv
 # from cytools.f_theory import Uplift_functions as UF
 from . import Uplift_functions as UF
 from numpy.typing import ArrayLike
-if TYPE_CHECKING:
-    from cytools import Cone
-    from cytools.triangulation import Triangulation
 
 __all__ = [
     "CY_orientifold",
@@ -607,6 +603,27 @@ class CY_orientifold():
             self.__fixed_locus[key] = cached if cached is not None else UF.orientifold_fixed_locus(self, check=check, return_chi=return_chi)
         return self.__fixed_locus[key]
             
+    def chi_fixed_locus(self):
+        return self.fixed_locus().get("chi_I")
+
+    def chi_O7(self):
+        return self.fixed_locus().get("chi_O7")
+
+    def chi_O3(self):
+        return self.fixed_locus().get("chi_O3")
+
+    def O7(self):
+        return (self.fixed_locus().get("O7_rays"),self.fixed_locus().get("O7_two_cones"))
+
+    def O3(self):
+        return self.fixed_locus().get("O3_cones")
+
+    # def chi_X(self):
+    #     return self.fixed_locus().get("chi_X")
+
+    # def chi_B(self):
+    #     return self.fixed_locus().get("chi_B")
+
 
 class F_Theory_Uplift():
     """
@@ -2105,11 +2122,11 @@ class F_Theory_Uplift():
     
         **Returns:**
     
-        - `np.ndarray`: Integer array returned by `UF.basis_H2_toric_fan`: the one-indexed ray labels forming a basis for the relevant toric curve homology.
+        - `np.ndarray`: Integer array returned by `UF.basis_homology`: the one-indexed ray labels forming a basis for the relevant toric curve homology.
     
         """
         if self.__basis_homology_M is None:
-            self.__basis_homology_M = UF.basis_H2_toric_fan(self.M_conv_toric_fan())
+            self.__basis_homology_M = UF.basis_homology(self.M_conv_toric_fan())
         return self.__basis_homology_M
     
     def basis_homology_N(self, as_LLL: bool = True) -> np.ndarray:
@@ -2124,11 +2141,11 @@ class F_Theory_Uplift():
     
         **Returns:**
     
-        - `np.ndarray`: Integer array returned by `UF.basis_H2_toric_fan`: the one-indexed ray labels forming a basis for the relevant toric curve homology.
+        - `np.ndarray`: Integer array returned by `UF.basis_homology`: the one-indexed ray labels forming a basis for the relevant toric curve homology.
     
         """
         if self.__basis_homology_N is None:
-            self.__basis_homology_N = UF.basis_H2_toric_fan(self.smooth_uplift_ambient_toric_fan())
+            self.__basis_homology_N = UF.basis_homology(self.smooth_uplift_ambient_toric_fan())
         return self.__basis_homology_N
     
     def nef_partition_N(self,only_intersecting: bool = False) -> tuple[tuple[np.integer, ...], tuple[np.integer, ...]]:
@@ -2285,9 +2302,9 @@ class F_Theory_Uplift():
             self.__intersection_numbers_Qsat=UF.tensor_symm_in_basis(self.intersection_numbers_M(),self.basis_homology_M(),self.Qsat(),in_prime_basis=True)
         return self.__intersection_numbers_Qsat
 
-    def mori_cone_face_d7(self):
+    def mori_cone_face_d7(self, check_face=False):
         if self.__MC_face is None:
-            self.__MC_face=UF.mori_cone_in_glsm_basis(self.Qsat(),self.M_conv_toric_fan(),sub_rows=np.arange(self.sizes[0],self.sizes[0]+self.sizes[1]),as_face_in_higher_dim_ambient=True)
+            self.__MC_face=UF.mori_cone_in_glsm_basis(self.Qsat(),self.M_conv_toric_fan(),sub_rows=np.arange(self.sizes[0],self.sizes[0]+self.sizes[1]),as_face_in_higher_dim_ambient=True,check_face=check_face)
         return self.__MC_face
 
     def compute_d7_gv(self,hilbert_basis=False,min_points=600,max_deg=2,target_points=None):
