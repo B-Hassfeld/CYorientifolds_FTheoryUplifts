@@ -86,6 +86,7 @@ class CY_orientifold():
         self.__xi = None
         self._original_verts=None
         self.__orbifold_toric_fan = None
+        self.__n_separating_rays = 0
         self.__orbifold_line_bundle = None
         self.__yields_nef_decomposition = None
         self.__yields_partition = None
@@ -165,6 +166,12 @@ class CY_orientifold():
                             self.__normal_fan = normal_fan
                             # the rays of the unrefined normal fan (the first rows) alone cut out both Newton polytopes, so all other non-intersecting rays can be dropped
                             inds=np.union1d(UF.intersecting_points(orbifold_pts_refined,polytopes=[NP_orbifold],as_indices=True),np.arange(len(normal_fan.vectors())))
+                            # except the blowups of D_v cap D_v' for NHC rays v,v': they miss B as well, but are kept (appended at the end) so that NHC divisors do not meet in the ambient
+                            nhc_refined=np.flatnonzero(self._multiplier*(1-line_bundles[:,0])-line_bundles[:,1]==3)
+                            dropped=np.setdiff1d(np.arange(len(orbifold_pts_refined)),np.union1d(inds,nhc_refined))
+                            separating=UF.NHC_separating_rays(orbifold_pts_refined,nhc_refined,dropped)
+                            self.__n_separating_rays=len(separating)
+                            inds=np.concatenate([inds,separating])
                             orbifold_pts_refined=orbifold_pts_refined[inds]
                             line_bundles=line_bundles[inds]
                             Lambda_inv=np.linalg.inv(Lambda)
@@ -238,12 +245,16 @@ class CY_orientifold():
         """
         **Description:**
     
-        Constructs the toric fan associated with the orbifold vector configuration if it has not already been cached. If a nef decomposition was constructed, the fan is obtained from the corresponding normal fan refinement. Otherwise, it uses the cone structure inherited from the Calabi-Yau ambient toric fan.
-    
+        Constructs the toric fan associated with the orbifold vector configuration if it has not already been cached. If a nef decomposition was constructed, the fan is obtained from the corresponding normal fan refinement: the rays are inserted by stellar subdivisions, and the rays separating NHC divisors (the last rows of `vectors_orbifold()`, see `UF.NHC_separating_rays`) are inserted last, so that no two NHC divisors meet and the cones meeting the orientifold base are not changed by them. Otherwise, it uses the cone structure inherited from the Calabi-Yau ambient toric fan.
+
+        **Raises:**
+
+        - `ValueError`: Raised if two NHC divisors still meet in the refined normal fan.
+
         **Returns:**
-    
+
         - `Fan`: The toric fan of the orbifold ambient variety.
-    
+
         """
         if self.__orbifold_toric_fan is None:
             if self.ambient_triangulation:
@@ -257,8 +268,16 @@ class CY_orientifold():
                     for c in nf.cones():
                         nc=tuple(sorted([inds[x-1] for x in c]))
                         new_cones.add(nc)
-                    new_fan=Fan(vc=VC,cones=new_cones)
-                    self.__orbifold_toric_fan = UF.refine_fan(new_fan)
+                    V=self.vectors_orbifold()
+                    n=len(V)-self.__n_separating_rays
+                    fan=UF.refine_fan(Fan(vc=VectorConfiguration(V[:n]),cones=new_cones))
+                    if n<len(V):
+                        fan=UF.reorder_fan(UF.refine_fan(fan,V[n:]),V)
+                    NHC=set(int(l) for l in self.NHC(as_labels=True))
+                    touching=[c for c in UF.get_lower_dimensional_cones(fan,2) if all(int(l) in NHC for l in c)]
+                    if touching:
+                        raise ValueError(f"The NHC divisors of the cones {touching[:5]} still meet in the refined normal fan.")
+                    self.__orbifold_toric_fan = fan
                 else:
                     self.__orbifold_toric_fan = Fan(VectorConfiguration(self.vectors_orbifold()),cones=self.CY_ambient_toric_fan().cones())
         return self.__orbifold_toric_fan
@@ -618,6 +637,29 @@ class CY_orientifold():
     def O3(self):
         return self.fixed_locus().get("O3_cones")
 
+    def p_g_O7(self, check: bool = True, full: bool = False) -> dict:
+        """
+        **Description:**
+
+        Computes the geometric genus p_g=h^{2,0} of every O7-plane with `UF.O7_holomorphic_data`: Noether's formula with K_S^2 from adjunction in the orbifold toric variety and chi(S) from `fixed_locus()`, checked against the holomorphic Lefschetz formula chi_I=16+8*sum_S chi(O_S).
+
+        **Arguments:**
+
+        - `check (bool)`: Whether to run the consistency checks of `UF.O7_holomorphic_data`. Defaults to `True`.
+        - `full (bool)`: Whether to return all data (K_S^2, chi(O_S), components, q, totals) instead of p_g only. Defaults to `False`.
+
+        **Raises:**
+
+        - `ValueError`: Raised by `UF.O7_holomorphic_data` if a check fails.
+
+        **Returns:**
+
+        - `dict`: O7-plane (keyed as in `fixed_locus()["chi_O7_components"]`) -> p_g, or with `full` the output of `UF.O7_holomorphic_data`.
+
+        """
+        data = UF.O7_holomorphic_data(self, check=check)
+        return data if full else data["p_g"]
+
     # def chi_X(self):
     #     return self.fixed_locus().get("chi_X")
 
@@ -710,6 +752,8 @@ class F_Theory_Uplift():
         self.__c3_N = None
         self.__c2_M = None
         self.__c3_M = None
+        self.__c2_sat=None
+        self.__c3_sat=None
         self.__blow_down_fan = None
         self.__labels_M_conv_toric_fan = None
         self.__vectors_M_conv_toric_fan = None
@@ -725,7 +769,8 @@ class F_Theory_Uplift():
         self.__MC_face=None
         self.__intersection_numbers_Qsat=None
         self.__intersection_numbers_surfaces_sat=None
-        self.__sizes=None
+        self.__block_sizes=None
+        self.__vertical_intersection_form = None
 
         match orientifold_or_points:
             case CY_orientifold():
@@ -834,7 +879,7 @@ class F_Theory_Uplift():
     
         **Arguments:**
     
-        - `backend (str)`: Lattice-point backend, "auto", "normaliz", "cytools" or "latte" (see `UF.hodge_diamond_stringy`). Only used on the first call. Defaults to `'auto'`.
+        - `backend (str)`: How the h*-polynomials of the faces of the Cayley polytope are obtained, "auto", "faces", "normaliz", "cytools" or "latte" (see `UF.hodge_diamond_stringy`); "faces" always uses the general computation, face by face and without enumerating dilations. Only used on the first call. Defaults to `'auto'`.
     
         **Raises:**
     
@@ -849,7 +894,7 @@ class F_Theory_Uplift():
             if not self.is_nef_decomposition():
                 raise ValueError("Hodge Numbers can only be computed for nef-partitions and nef-decompositions")
             V = self.Cayley_M().vertices()
-            self.__hodge_numbers = (UF.hodge_diamond_cy4 if V.shape[1] == 8 else UF.hodge_diamond_stringy)(V, backend)
+            self.__hodge_numbers = (UF.hodge_diamond_cy4 if (V.shape[1] == 8 and backend != "faces") else UF.hodge_diamond_stringy)(V, backend)
         return self.__hodge_numbers
     
     def is_trilayer_orientifold(self) -> bool:
@@ -1322,7 +1367,6 @@ class F_Theory_Uplift():
         **Arguments:**
     
         - `as_labels (bool)`: If `True`, return the one-indexed labels of these points with respect to the non-origin points of `pol_M_conv()` (equivalently, indices into `pol_M_conv().points()`). Defaults to `False`.
-        - `toric_fan_adapted (bool)`: Only used if `as_labels` is `False`. If `True`, return the stacked points of `intersecting_divisors_B_M()` and `intersecting_divisors_W_M()` instead. Defaults to `False`.
     
         **Raises:**
     
@@ -1385,7 +1429,25 @@ class F_Theory_Uplift():
                 miss=np.delete(miss,zero_ind[0],0)
         return miss
 
-    def vectors_M_conv_toric_fan(self,as_labels=False):
+    def vectors_M_conv_toric_fan(self, labels=None, as_labels: bool = False) -> np.ndarray:
+        """
+        **Description:**
+
+        Computes and caches the rays of the M-lattice toric fan `M_conv_toric_fan()`, in the order used by that fan: first the intersecting divisors of the base (`intersecting_divisors_B_M()`), then those of the Weierstrass polytope (`intersecting_divisors_W_M()`), then the remaining vertices of `pol_M_conv()`, and, if `h_prime_is_lattice()`, the missing fiber points (`_missing_points()`).
+
+        **Arguments:**
+
+        - `as_labels (bool)`: If `True`, return the labels of these rays, i.e. their indices in `pol_M_conv().points()` (the origin has index 0, so this is the same convention as `intersecting_divisors_M(as_labels=True)`). If `False`, return the rays themselves. Defaults to `False`.
+
+        **Raises:**
+
+        - `ValueError`: Raised if the uplift is not a nef partition.
+
+        **Returns:**
+
+        - `np.ndarray`: The labels (1D integer array) or the rays (one ray per row).
+
+        """
         if not self.is_nef_partition():
             raise ValueError("Vectors M-conv can only be computed for nef partitions")
         if self.__vectors_M_conv_toric_fan is None:
@@ -1410,6 +1472,8 @@ class F_Theory_Uplift():
             # else:
             #     ptsW=self.intersecting_divisors_W_M()
             # self.__vectors_M_conv_toric_fan = np.vstack([ptsB,ptsW])
+        if labels is not None:
+            return self.__vectors_M_conv_toric_fan[np.array(labels)-1]
         if as_labels:
             return self.__labels_M_conv_toric_fan
         return self.__vectors_M_conv_toric_fan
@@ -1537,13 +1601,14 @@ class F_Theory_Uplift():
         **Arguments:**
     
         - `only_intersecting (bool)`: If `True`, return only the entries belonging to the intersecting divisors `intersecting_divisors_M()`. Defaults to `False`.
-    
+        - `toric_fan_adapted (bool)`: If `True`, return the entries in the ray order of `M_conv_toric_fan()` (see `vectors_M_conv_toric_fan()`). Takes precedence over `only_intersecting`. Defaults to `False`.
+
         **Raises:**
-    
+
         - `ValueError`: Raised if the uplift is not a nef partition.
-    
+
         **Returns:**
-    
+
         - `np.ndarray`: The M-lattice Weierstrass line bundle coefficients (integer array).
     
         """
@@ -1569,13 +1634,14 @@ class F_Theory_Uplift():
         **Arguments:**
     
         - `only_intersecting (bool)`: If `True`, return only the entries belonging to the intersecting divisors `intersecting_divisors_M()`. Defaults to `False`.
-    
+        - `toric_fan_adapted (bool)`: If `True`, return the entries in the ray order of `M_conv_toric_fan()` (see `vectors_M_conv_toric_fan()`). Takes precedence over `only_intersecting`. Defaults to `False`.
+
         **Raises:**
-    
+
         - `ValueError`: Raised if the uplift is not a nef partition.
-    
+
         **Returns:**
-    
+
         - `np.ndarray`: The M-lattice base line bundle coefficients (integer array).
     
         """
@@ -1680,7 +1746,8 @@ class F_Theory_Uplift():
                 newf=UF.refine_fan(f_common_ref,self.vectors_M_conv_toric_fan())
                 self.__M_conv_toric_fan=UF.reorder_fan(newf,self.vectors_M_conv_toric_fan())
             else:
-                self.__M_conv_toric_fan=UF.refine_fan(UF.face_fan(self.pol_M_conv(),simplicial=True),self.vectors_M_conv_toric_fan())
+                newf=UF.refine_fan(UF.face_fan(self.pol_M_conv(),simplicial=True),self.vectors_M_conv_toric_fan())
+            self.__M_conv_toric_fan=UF.reorder_fan(newf,self.vectors_M_conv_toric_fan())
             # nf=UF.face_fan(self.pol_M_conv(),simplicial=True)
             # gen_fiber_rays=self.vectors_M_conv_toric_fan()[np.where(self.vectors_M_conv_toric_fan()@self.u==0)[0]]
             # newf=UF.refine_fan(nf,gen_fiber_rays)
@@ -2285,25 +2352,29 @@ class F_Theory_Uplift():
             self.__intersection_numbers_M=UF.subvariety_intersection_numbers(self.M_conv_toric_fan(),[LB1,LB2],self.basis_homology_M(),tol=tol,decimals=decimals)
         return self.__intersection_numbers_M
 
-    def Qd7(self):
+    def Qd7(self,D7_only=False):
         if self.__Qd7 is None:
-            self.__Qd7,self.__sizes=UF.glsm_from_refinement(self)
+            self.__Qd7,self.__block_sizes=UF.glsm_from_refinement(self)
+        if D7_only:
+            return self.__Qd7[self.block_sizes()[0]:self.block_sizes()[0]+self.block_sizes()[1]]
         return self.__Qd7
 
-    def Qsat(self):
+    def Qsat(self,D7_only=False):
         if self.__Qsat is None:
-            Q=self.Qd7(); s=self.sizes()
+            Q=self.Qd7(); s=self.block_sizes()
             d7_rows=np.r_[s[0]:s[0]+s[1],s[0]+s[1]+1:s[0]+s[1]+1+s[3]]
             self.__Qsat=UF.saturate_glsm(Q,protected_rows=d7_rows)
+        if D7_only:
+            return self.__Qsat[self.block_sizes()[0]:self.block_sizes()[0]+self.block_sizes()[1]]
         return self.__Qsat
     
-    def sizes(self):
-        if self.__sizes is None:
+    def block_sizes(self):
+        if self.__block_sizes is None:
             h21m=self.hodge_numbers_orientifold().get('h21-')
-            sizes=np.array([h21m,self.h31()-1-h21m,1,len(UF.row_difference(self.pol_W_M().vertices(),self.intersecting_divisors_W_M())),0])
-            sizes[-1]=self.vectors_M_conv_toric_fan().shape[0]-np.sum(sizes[:-1])-6
-            self.__sizes=sizes
-        return self.__sizes
+            block_sizes=np.array([h21m,self.h31()-1-h21m,1,len(UF.row_difference(self.pol_W_M().vertices(),self.intersecting_divisors_W_M())),0])
+            block_sizes[-1]=self.vectors_M_conv_toric_fan().shape[0]-np.sum(block_sizes[:-1])-6
+            self.__block_sizes=block_sizes
+        return self.__block_sizes
 
 
     def intersection_numbers_Qsat(self):
@@ -2313,7 +2384,7 @@ class F_Theory_Uplift():
 
     def mori_cone_face_d7(self, check_face=False):
         if self.__MC_face is None:
-            self.__MC_face=UF.mori_cone_in_glsm_basis(self.Qsat(),self.M_conv_toric_fan(),sub_rows=np.arange(self.sizes()[0],self.sizes()[0]+self.sizes()[1]),as_face_in_higher_dim_ambient=True,check_face=check_face)
+            self.__MC_face=UF.mori_cone_in_glsm_basis(self.Qsat(),self.M_conv_toric_fan(),sub_rows=np.arange(self.block_sizes()[0],self.block_sizes()[0]+self.block_sizes()[1]),as_face_in_higher_dim_ambient=True,check_face=check_face)
         return self.__MC_face
 
     def compute_d7_gv(self,hilbert_basis=False,min_points=600,max_deg=2,target_points=None):
@@ -2334,7 +2405,31 @@ class F_Theory_Uplift():
         self.__intersection_numbers_Qsat=None
         self.__intersection_numbers_surfaces_sat=None
         self.__MC_face=None
+        self.__vertical_intersection_form=None
+        self.__c2_sat=None
+        self.__c3_sat=None
 
+    def vertical_intersection_form(self):
+        if self.__vertical_intersection_form is None:
+            self.__vertical_intersection_form = UF.intersection_form_H22_vertical(self.intersection_numbers_Qsat(),return_gram=False)
+        return self.__vertical_intersection_form
+
+    def c2_sat(self):
+        if self.__c2_sat is None:
+            self.__c2_sat=UF.tensor_symm_in_basis(self.c2_M(),self.basis_homology_M(),self.Qsat())
+        return self.__c2_sat
+
+    def c3_sat(self):
+            if self.__c3_sat is None:
+                self.__c3_sat=UF.tensor_symm_in_basis(self.c3_M(),self.basis_homology_M(),self.Qsat())
+            return self.__c3_sat
+
+    def D7_indices(self):
+        return np.arange(self.block_sizes()[0],self.block_sizes()[0]+self.block_sizes()[1])
+
+    def fiber_vectors(self):
+        vecs=self.vectors_M_conv_toric_fan()[self.vectors_M_conv_toric_fan()@self.u==0]
+        return UF.project_points(vecs,self.u)
 
 def fetch_orientifolds(only_regular: bool=True, only_nef_decomposition: bool=False,h11: int | None = None,h12: int | None = None,h13: int | None = None,
     h21: int | None = None,h22: int | None = None,h31: int | None = None,chi: int | None = None,

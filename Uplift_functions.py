@@ -21,7 +21,7 @@
 from __future__ import annotations
 # 'standard' imports
 from itertools import combinations, combinations_with_replacement, permutations, product
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from fractions import Fraction
 from functools import cache
 from math import comb, factorial
@@ -30,12 +30,14 @@ from typing import TYPE_CHECKING, Any, Literal
 import math
 # 3rd party imports
 import numpy as np
+import os
 import shutil
 import tempfile
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 import re
 from pathlib import Path
-from flint import fmpz, fmpz_mat
+from flint import fmpz, fmpz_mat, nmod_mat
 from scipy.linalg import schur, qr
 import scipy.sparse as sps
 # from scipy.optimize import linprog
@@ -48,8 +50,10 @@ from cytools.vector_config import VectorConfiguration
 from cygv import compute_gv
 from numpy.typing import ArrayLike
 from .Utility_functions.matrix_utilities import *
+from .Utility_functions.matrix_utilities import _row_counts
 from .Utility_functions.fan_utilities import *
 from .Utility_functions.toric_geometry_utilities import *
+from . import CICY as cicy
 if TYPE_CHECKING:
     from .FT_CY import CY_orientifold, F_Theory_Uplift
 
@@ -216,6 +220,32 @@ def generic_section_factorizes(points: np.ndarray,linebundle_weights: np.ndarray
     except ValueError:
         return True
     return~np.all(np.any(points@NP.points().T+linebundle_weights[:,None]!=0,axis=1))
+
+def NHC_separating_rays(points: ArrayLike,nhc: ArrayLike,candidates: ArrayLike)->np.ndarray:
+    """
+    **Description:**
+    Selects the candidate rays that are the primitive vector of v+v' for two NHC rays v,v', i.e. the rays whose stellar
+    subdivisions blow up the intersections D_v cap D_v' of NHC divisors (inserted into the 2-cone (v,v'), such a ray removes
+    it). Used by `CY_orientifold` to keep these rays in the refined orbifold fan, so that no two NHC divisors meet in the
+    ambient space. The pair sums are formed at once and looked up among the candidates by sorting (`_row_counts`), in
+    O(len(nhc)^2+len(candidates)) up to logarithms, with exact integer arithmetic.
+    **Arguments:**
+    - `points (ArrayLike)`: The integer rays, one per row.
+    - `nhc (ArrayLike)`: Zero-based row indices of the NHC rays.
+    - `candidates (ArrayLike)`: Zero-based row indices of the rays to test.
+    **Returns:**
+    - `np.ndarray`: The zero-based indices of the selected candidates, in the order of `candidates`.
+    """
+    P=np.asarray(points,dtype=np.int64)
+    nhc=np.asarray(nhc,dtype=int)
+    candidates=np.asarray(candidates,dtype=int)
+    if len(nhc)<2 or len(candidates)==0:
+        return np.array([],dtype=int)
+    a,b=np.triu_indices(len(nhc),1)
+    S=P[nhc[a]]+P[nhc[b]]
+    g=np.gcd.reduce(np.abs(S),axis=1)
+    S=S[g>0]//g[g>0,None]
+    return candidates[_row_counts(P[candidates],S)>0]
 
 def trilayer_5d_Ftheory_uplift(p: Polytope,verbosity: int=1)->Polytope:
     """
@@ -681,6 +711,75 @@ def chi_O3(O: CY_orientifold|F_Theory_Uplift)->int:
     """
     return _fixed_locus(O)["n_O3"]
 
+def O7_holomorphic_data(O: CY_orientifold|F_Theory_Uplift,check: bool=True)->dict:
+    """
+    **Description:**
+    Holomorphic invariants of the O7-planes S of `orientifold_fixed_locus` (keyed as in `chi_O7_components`): K_S^2,
+    chi(O_S), the number of connected components, the irregularity q and the geometric genus
+    p_g=h^{2,0}=chi(O_S)-#components+q.
+    For a divisorial O7-plane S=D_i cap B, adjunction in the orbifold toric variety gives K_S=(K_V+B+D_i)|_S, so
+    K_S^2=(K_V+B+D_i)^2 D_i B with the intersection numbers of `orbifold_toric_fan()`, and Noether's formula gives
+    chi(O_S)=(K_S^2+chi(S))/12 with chi(S) from `chi_O7_components`. The face F of the Newton polytope of B on D_i fixes
+    the topology (Danilov-Khovanskii): dim F=1 of lattice length k gives k disjoint toric surfaces, dim F=2 a connected
+    surface birationally ruled over a curve of genus q=#(interior lattice points of F), dim F=3 a connected surface
+    with q=0. Non-divisorial O7-planes are toric surfaces: chi(O_S)=1, p_g=q=0, K_S^2=12-chi(S).
+    **Arguments:**
+    - `O (CY_orientifold|F_Theory_Uplift)`: The Calabi-Yau orientifold or F-theory uplift.
+    - `check (bool)`: Whether to verify (i) K_S=D_i|_S/2, which follows from -2K_B ~ sum of the disjoint O7-planes,
+      (ii) the integrality of K_S^2 and chi(O_S) and the values chi(O_S)=k (dim F=1) and 1-q (dim F=2), and (iii) the
+      holomorphic Lefschetz formula chi_I=16+8*sum_S chi(O_S). Defaults to `True`.
+    **Raises:**
+    - `ValueError`: Raised (with `check`) if one of these tests fails.
+    **Returns:**
+    - `dict`: `p_g`, `chi_O`, `K2`, `components`, `q` (each a dict O7-plane -> int) and the totals `sum_p_g`,
+      `sum_chi_O`.
+    """
+    O=O.orientifold() if hasattr(O,"orientifold") else O
+    fl=_fixed_locus(O)
+    V=np.asarray(O.vectors_orbifold(),dtype=int)
+    L=np.asarray(O.line_bundle(),dtype=int)
+    _,W,E=_newton_data(V,L)
+    IN={k:v for k,v in O.intersection_numbers_orbifold().items() if min(k)>=1}
+    K=np.array(list(IN),dtype=int)-1
+    P=[K[:,s] for s in permutations(range(4))]
+    w=np.array(list(IN.values()),dtype=float)/sum((p==K).all(axis=1) for p in P)
+    T=lambda x0,x1,x2,x3: float(sum((w*x0[p[:,0]]*x1[p[:,1]]*x2[p[:,2]]*x3[p[:,3]]).sum() for p in P))
+    out={key:{} for key in ("p_g","chi_O","K2","components","q")}
+    for S,chi_S in fl["chi_O7_components"].items():
+        if len(S)==2:
+            chi_O,K2,c,q=1,12-chi_S,1,0
+        else:
+            e=np.zeros(len(V)); e[S[0]-1]=1
+            a=L+e-1
+            K2=T(e,a,a,L)
+            F=W[E[S[0]-1]]
+            r=np.linalg.matrix_rank(F[1:]-F[0])
+            if r==1:
+                c,q=int(np.gcd.reduce(F[1]-F[0])),0
+            elif r==2:
+                span=_saturated_kernel(_saturated_kernel(F[1:]-F[0]).T)
+                x=np.rint(np.linalg.lstsq(span.astype(float),(F-F[0]).T.astype(float),rcond=None)[0].T).astype(int)
+                hull=x[ConvexHull(x).vertices]
+                b=int(np.gcd.reduce(np.abs(np.roll(hull,-1,axis=0)-hull),axis=1).sum())
+                c,q=1,(_normalized_volume(F,span)-b+2)//2
+            else:
+                c,q=1,0
+            chi_O=(K2+chi_S)/12
+            if check:
+                if not np.isclose(K2,T(e,e,e,L)/4,atol=1e-6):
+                    raise ValueError(f"O7-plane {S}: adjunction gives K^2={K2}, the orientifold formula D^3B/4={T(e,e,e,L)/4}.")
+                if not (np.isclose(K2,round(K2),atol=1e-6) and np.isclose(chi_O,round(chi_O),atol=1e-6)):
+                    raise ValueError(f"O7-plane {S}: non-integral K^2={K2} or chi(O)={chi_O}.")
+            K2,chi_O=int(round(K2)),int(round(chi_O))
+            if check and ((r==1 and chi_O!=c) or (r==2 and chi_O!=1-q)):
+                raise ValueError(f"O7-plane {S}: chi(O)={chi_O} contradicts the topology (face dimension {r}, {c} components, q={q}).")
+        out["p_g"][S],out["chi_O"][S],out["K2"][S],out["components"][S],out["q"][S]=chi_O-c+q,chi_O,K2,c,q
+    out["sum_p_g"]=sum(out["p_g"].values())
+    out["sum_chi_O"]=sum(out["chi_O"].values())
+    if check and 16+8*out["sum_chi_O"]!=fl["chi_I"]:
+        raise ValueError(f"Holomorphic Lefschetz fails: chi_I={fl['chi_I']}, but 16+8*sum chi(O_S)={16+8*out['sum_chi_O']}.")
+    return out
+
 def intersection_test_uplift(F: F_Theory_Uplift,target_divisors: Sequence[int]|np.ndarray)->np.ndarray:
     """
     **Description:**
@@ -748,8 +847,16 @@ try:
     from PyNormaliz import Cone as NormalizCone
 except ImportError:
     NormalizCone=None
+try:
+    from PyNormaliz import NmzSetNumberOfNormalizThreads
+except ImportError:
+    NmzSetNumberOfNormalizThreads=None
 
-def hodge_diamond_stringy(P: Polytope|ArrayLike,backend: Literal["auto","normaliz","latte","cytools"]="auto")->np.ndarray:
+# Faces of normalized volume above this bound are handed to LattE by the "faces" backend (if LattE is installed): the
+# cost of Normaliz' Hilbert series grows with the volume, that of LattE's Ehrhart polynomial does not.
+_HD_FAT_FACE_VOLUME=2_000_000
+
+def hodge_diamond_stringy(P: Polytope|ArrayLike,backend: Literal["auto","faces","normaliz","latte","cytools"]="auto")->np.ndarray:
     """
     **Description:**
     Computes the stringy Hodge numbers of the Calabi-Yau complete intersection
@@ -759,28 +866,37 @@ def hodge_diamond_stringy(P: Polytope|ArrayLike,backend: Literal["auto","normali
     support (the Cayley polytope of the nabla_i) gives the mirror.
     **Arguments:**
     - `P (Polytope | ArrayLike)`: The support polytope (or its vertices, one per row).
-    - `backend (Literal["auto", "normaliz", "latte", "cytools"])`: How the lattice points of the dilated faces are counted.
-        "normaliz" (PyNormaliz) or "cytools" enumerate the dilations kP;
-        "latte" instead computes the Ehrhart polynomials of all faces of
-        dimension >= 3 one by one, which avoids enumerating kP when it is huge.
-        "auto" picks the first available of normaliz, latte, cytools. Defaults to `"auto"`.
+    - `backend (Literal["auto", "faces", "normaliz", "latte", "cytools"])`: How the h*-polynomials of the faces are obtained.
+        "faces" computes the h*-polynomial of every face on its own, without
+        enumerating any dilation kP: from the Hilbert series of Normaliz
+        (PyNormaliz), and for faces of very large volume from the Ehrhart
+        polynomial of LattE if it is installed (`_hd_h_star_per_face`).
+        "normaliz" (PyNormaliz) or "cytools" enumerate the dilations kP, whose
+        number of lattice points grows quickly with the dimension;
+        "latte" enumerates P only and computes the Ehrhart polynomials of all
+        faces of dimension >= 3 one by one with LattE.
+        "auto" picks "faces" if PyNormaliz is installed, and otherwise the
+        first available of latte, cytools. Defaults to `"auto"`.
     **Raises:**
     - `ValueError`: Raised if P is not a reflexive Gorenstein support or the backend is unknown or not installed.
     - `RuntimeError`: Raised if the resulting Hodge numbers violate the Hodge symmetries or are negative.
     **Returns:**
     - `np.ndarray`: The integer Hodge diamond, h[p, q] = h^{p,q}.
     """
-    V, W, index, backend=_hd_setup(P,backend)
+    V, W, index, backend=_hd_setup(P,backend,per_face=True)
     faces, duals, dims, leq=_hd_face_lattice(V,W)
     S=_hd_s_tilde(V,W,faces,duals,dims,leq,index,backend)
     S_dual=_hd_s_tilde(W,V,duals,faces,V.shape[1]-2-dims,leq.T,index,backend)
     cy_dim=V.shape[1]-2*index
     h=np.zeros((cy_dim+1,cy_dim+1),dtype=object)
-    for a, b, d in zip(S,S_dual,dims):
-        for i, j in zip(*np.nonzero(np.outer(a,b))):
+    for d in np.unique(dims).tolist():
+        # all faces of one dimension at once: M[i, j] = sum_F S~(F)_i S~(F*)_j, with exact (Python) integers
+        on=np.flatnonzero(dims==d).tolist()
+        M=np.array([S[f] for f in on],dtype=object).T@np.array([S_dual[f] for f in on],dtype=object)
+        for i, j in zip(*np.nonzero(M)):
             p, q=d+1-i+j-index, i+j-index
             if 0<=p<=cy_dim and 0<=q<=cy_dim:
-                h[p,q]+=a[i]*b[j]
+                h[p,q]+=M[i,j]
     if (h!=h.T).any() or (h!=h[::-1,::-1]).any() or (h<0).any():
         raise RuntimeError(f"inconsistent stringy Hodge numbers:\n{h}")
     return h.astype(int)
@@ -798,14 +914,17 @@ def hodge_diamond_cy4(P: Polytope|ArrayLike,backend: Literal["auto","normaliz","
     and any number of parts.
     **Arguments:**
     - `P (Polytope | ArrayLike)`: The Cayley polytope (or its vertices, one per row), e.g. F.Cayley_M().
-    - `backend (Literal["auto", "normaliz", "latte", "cytools"])`: "normaliz" or "cytools" for enumerating P, 2P, P*, 2P*;
-        "latte" also enumerates with CYTools here; "auto" prefers normaliz. Defaults to `"auto"`.
+    - `backend (Literal["auto", "faces", "normaliz", "latte", "cytools"])`: "normaliz" or "cytools" for enumerating P, 2P, P*, 2P*;
+        "latte" also enumerates with CYTools here, and "faces" with normaliz (the per-face computation of
+        `hodge_diamond_stringy` is not used by the closed formulas); "auto" prefers normaliz. Defaults to `"auto"`.
     **Raises:**
     - `ValueError`: Raised if P is not a reflexive Gorenstein support, is not the Cayley polytope of a two-part nef partition in six dimensions, or the backend is unknown or not installed.
     **Returns:**
     - `np.ndarray`: The 5 x 5 integer Hodge diamond, h[p, q] = h^{p,q}.
     """
     V, W, index, backend=_hd_setup(P,backend)
+    if backend=="faces":
+        backend="normaliz"
     if V.shape[1]!=8 or index!=2:
         raise ValueError("hodge_diamond_cy4 needs the Cayley polytope of a two-part nef partition in six dimensions")
     faces, duals, dims, leq=_hd_face_lattice(V,W)
@@ -846,7 +965,7 @@ def hodge_diamond_cy4(P: Polytope|ArrayLike,backend: Literal["auto","normaliz","
     h21=bb_h21(lstar_dual,lstar,6-dims,leq.T)
     return np.array([[1,0,0,0,1],[0,h11,h21,h31,0],[0,h21,44+4*h11-2*h21+4*h31,h21,0],[0,h31,h21,h11,0],[1,0,0,0,1]],dtype=int)
 
-def _hd_setup(P: Polytope|ArrayLike,backend: Literal["auto","normaliz","latte","cytools"])->tuple[np.ndarray,np.ndarray,int,Literal["normaliz","latte","cytools"]]:
+def _hd_setup(P: Polytope|ArrayLike,backend: Literal["auto","faces","normaliz","latte","cytools"],per_face: bool=False)->tuple[np.ndarray,np.ndarray,int,Literal["faces","normaliz","latte","cytools"]]:
     """
     **Description:**
     Vertices V of P, vertices W of the dual support P* (the primitive rays of the
@@ -855,11 +974,12 @@ def _hd_setup(P: Polytope|ArrayLike,backend: Literal["auto","normaliz","latte","
     reflexive Gorenstein support.
     **Arguments:**
     - `P (Polytope | ArrayLike)`: The support polytope (or its vertices, one per row).
-    - `backend (Literal["auto", "normaliz", "latte", "cytools"])`: The requested lattice-point backend; "auto" picks the first available of normaliz, latte, cytools (with a warning if PyNormaliz is missing).
+    - `backend (Literal["auto", "faces", "normaliz", "latte", "cytools"])`: The requested backend; "auto" picks the first available of normaliz, latte, cytools (with a warning if PyNormaliz is missing). "faces" needs PyNormaliz.
+    - `per_face (bool)`: Whether "auto" resolves to "faces" instead of "normaliz" if PyNormaliz is installed (for `hodge_diamond_stringy`). Defaults to `False`.
     **Raises:**
     - `ValueError`: Raised if P is not a reflexive Gorenstein support, or if the backend is unknown or not installed.
     **Returns:**
-    - `tuple[np.ndarray, np.ndarray, int, Literal["normaliz", "latte", "cytools"]]`: `(V, W, index, backend)`: the integer vertex matrices of P and P*, the Gorenstein index and the resolved backend.
+    - `tuple[np.ndarray, np.ndarray, int, Literal["faces", "normaliz", "latte", "cytools"]]`: `(V, W, index, backend)`: the integer vertex matrices of P and P*, the Gorenstein index and the resolved backend.
     """
     V=np.asarray(P.vertices() if isinstance(P,Polytope) else P,dtype=int)
     W=np.asarray(Cone(V).dual().extremal_rays(),dtype=int)
@@ -867,13 +987,15 @@ def _hd_setup(P: Polytope|ArrayLike,backend: Literal["auto","normaliz","latte","
     m, n=(np.rint(np.linalg.lstsq(X,np.ones(len(X)),rcond=None)[0]).astype(int) for X in (V,W))
     if np.linalg.matrix_rank(V)!=V.shape[1] or (V@m!=1).any() or (W@n!=1).any():
         raise ValueError("P is not a reflexive Gorenstein support (e.g. the Cayley polytope of a nef partition)")
-    available={"normaliz": NormalizCone is not None,"latte": shutil.which("count") is not None,"cytools": True}
+    available={"normaliz": NormalizCone is not None,"latte": shutil.which("count") is not None,"cytools": True,"faces": NormalizCone is not None}
     if backend=="auto":
         backend=next(name for name,ok in available.items() if ok)
-        if backend!="normaliz":
+        if backend=="normaliz" and per_face:
+            backend="faces"
+        if backend not in ("normaliz","faces"):
             warnings.warn(f"PyNormaliz is not installed, so lattice points are counted with {backend}, which may be much slower. " "Install it with `pip install pynormaliz`.")
     elif not available.get(backend,False):
-        raise ValueError(f"backend {backend!r} is unknown or not installed; choose from {[name for name,ok in available.items() if ok]}"+(" (install PyNormaliz with `pip install pynormaliz`)" if backend=="normaliz" else ""))
+        raise ValueError(f"backend {backend!r} is unknown or not installed; choose from {[name for name,ok in available.items() if ok]}"+(" (install PyNormaliz with `pip install pynormaliz`)" if backend in ("normaliz","faces") else ""))
     return V, W, int(m@n), backend
 
 def _hd_face_lattice(V: np.ndarray,W: np.ndarray)->tuple[list[frozenset[int]],list[frozenset[int]],np.ndarray,np.ndarray]:
@@ -932,18 +1054,18 @@ def _hd_interior_point_counts(X: np.ndarray,Y: np.ndarray,duals: Sequence[frozen
             lstar[face_of_dual[frozenset(np.flatnonzero(zero_set))],k]=count
     return lstar
 
-def _hd_s_tilde(X: np.ndarray,Y: np.ndarray,faces: Sequence[frozenset[int]],duals: Sequence[frozenset[int]],dims: np.ndarray,leq: np.ndarray,index: int,backend: Literal["normaliz","latte","cytools"])->list[list[int]]:
+def _hd_s_tilde(X: np.ndarray,Y: np.ndarray,faces: Sequence[frozenset[int]],duals: Sequence[frozenset[int]],dims: np.ndarray,leq: np.ndarray,index: int,backend: Literal["faces","normaliz","latte","cytools"])->list[list[int]]:
     """
     **Description:**
     S~(F, t) = sum_{G <= F} (-1)^(dim F - dim G) h*_G(t) g([G, F], t) for every face F
     of conv(X) (dual support conv(Y); faces, duals, dims, leq as in _hd_face_lattice).
-    h*_F of a face of dimension d follows from L_F(k) = #(kF cap Z) and
-    l*(kF) = #(relint(kF) cap Z) for k <= ceil(d/2) through
+    With the backend "faces" the h*-polynomials come from `_hd_h_star_per_face`, without
+    enumerating dilations. Otherwise h*_F of a face of dimension d follows from
+    L_F(k) = #(kF cap Z) and l*(kF) = #(relint(kF) cap Z) for k <= ceil(d/2) through
         sum_k L_F(k) t^k = h*_F(t) / (1-t)^(d+1),
         sum_k l*(kF) t^k = t^(d+1) h*_F(1/t) / (1-t)^(d+1),
-    using l*(kP) = L_P(k - index) for P itself (Gorenstein).  The g-polynomials of
-    the intervals [G, F] follow the recursion of
-    ``FaceLattice.g_polynomial`` (old code, now commented out).
+    using l*(kP) = L_P(k - index) for P itself (Gorenstein).  The sum over G with
+    the g-polynomials of the intervals [G, F] is done by `_hd_s_tilde_from_h_star`.
     **Arguments:**
     - `X (np.ndarray)`: The vertices of P = conv(X), one per row.
     - `Y (np.ndarray)`: The vertices of the dual support, one per row.
@@ -952,10 +1074,12 @@ def _hd_s_tilde(X: np.ndarray,Y: np.ndarray,faces: Sequence[frozenset[int]],dual
     - `dims (np.ndarray)`: The face dimensions.
     - `leq (np.ndarray)`: Boolean face order, leq[g, f] = (G <= F).
     - `index (int)`: The Gorenstein index.
-    - `backend (Literal["normaliz", "latte", "cytools"])`: "normaliz" or "cytools" enumerate dilations; "latte" computes Ehrhart polynomials of large faces with LattE's `count`.
+    - `backend (Literal["faces", "normaliz", "latte", "cytools"])`: "faces" computes the h*-polynomial of every face on its own; "normaliz" or "cytools" enumerate dilations; "latte" computes Ehrhart polynomials of large faces with LattE's `count`.
     **Returns:**
-    - `list[list[int]]`: For every face F, the integer coefficients of S~(F, t) (Python or NumPy integers), constant term first.
+    - `list[list[int]]`: For every face F, the integer coefficients of S~(F, t) (Python integers), constant term first.
     """
+    if backend=="faces":
+        return _hd_s_tilde_from_h_star(_hd_h_star_per_face(X,faces,dims),dims,leq)
     D=dims.max()
     needed=[-(-(D-index if d==D else d)//2) for d in dims]
     K=1 if backend=="latte" else max(needed)
@@ -980,35 +1104,200 @@ def _hd_s_tilde(X: np.ndarray,Y: np.ndarray,faces: Sequence[frozenset[int]],dual
             for i, c in enumerate(one_minus_t_power(interior,d)[1 : d+2],1):
                 h[d+1-i]=c
             h_star.append(h)
-    t_minus_one=[[(-1)**(e-i)*comb(e,i) for i in range(e+1)] for e in range(D+2)]
+    return _hd_s_tilde_from_h_star(h_star,dims,leq)
 
-    @cache
+def _hd_g_polynomials(dims: np.ndarray,leq: np.ndarray,upper: bool=True)->tuple[np.ndarray,Callable[[int,int],tuple[int,...]]]:
+    """
+    **Description:**
+    The g-polynomials of the intervals [G, F] of a face lattice, in one of two forms: with `upper` the recursion over
+    the faces x with G < x <= F,
+        g(G, F) = (1 - t) sum_x (t - 1)^(dim x - dim G - 1) g(x, F), truncated to degree < (rank + 1)//2,
+    which is the one in S~ and in the stringy E-function (as in the old ``FaceLattice.g_polynomial``); without `upper`
+    the same recursion in the opposite lattice, over the faces x with G <= x < F and with g(G, x), which is the
+    g-polynomial of the interval itself in the E-polynomial of a torus hypersurface. In both, g = 1 for
+    rank = dim F - dim G <= 2. An interval of rank rho with exactly rho atoms is the face lattice of a simplex (a
+    polytope of dimension rho - 1 with rho vertices), i.e. a Boolean lattice, and then g = 1 in both forms as well. So
+    only the remaining ("hard") intervals need the recursion, and for all others the sums over G weighted by g are
+    plain sums.
+    **Arguments:**
+    - `dims (np.ndarray)`: The face dimensions (-1 for the empty face).
+    - `leq (np.ndarray)`: Boolean face order, leq[g, f] = (G <= F).
+    - `upper (bool)`: Which of the two recursions is used. Defaults to `True`.
+    **Returns:**
+    - `tuple[np.ndarray, Callable]`: `(hard, g)`: hard[lo, hi] = (lo <= hi and the interval is not known to have
+      g = 1), and g(lo, hi), the coefficients of the g-polynomial (constant term first, up to degree (rank - 1)//2,
+      memoized); g(lo, hi) = (1,) wherever hard[lo, hi] is False.
+    """
+    dims=np.asarray(dims,dtype=np.int64)
+    rank=dims[None,:]-dims[:,None]
+    atoms=np.rint((leq&(rank==1)).astype(np.float32)@leq.astype(np.float32)).astype(np.int64)
+    hard=leq&(rank>=3)&(atoms!=rank)
+    t_minus_one=[[(-1)**(e-i)*comb(e,i) for i in range(e+1)] for e in range(int(dims.max()-dims.min())+2)]
+    memo: dict[tuple[int,int],tuple[int,...]]={}
+
     def g(lo: int,hi: int)->tuple[int,...]:
         """
         **Description:**
-        Truncated g-polynomial of the interval [lo, hi] of the face lattice (cached).
+        Truncated g-polynomial of the interval [lo, hi] of the face lattice (memoized).
         **Arguments:**
         - `lo (int)`: Index of the lower face.
         - `hi (int)`: Index of the upper face.
         **Returns:**
         - `tuple[int, ...]`: Coefficients of g, constant term first, up to degree (rank - 1)//2.
         """
-        rank=dims[hi]-dims[lo]
-        if rank<=2:
+        if not hard[lo,hi]:
             return (1,)
-        n=(rank+1)//2
-        h=[0]*n
-        for x in np.flatnonzero(leq[lo]&leq[:,hi]).tolist():
-            if x!=lo:
-                h=[a+b for a,b in zip(h,_hd_mul(t_minus_one[dims[x]-dims[lo]-1],g(x,hi),n))]
-        return tuple(_hd_mul([1,-1],h,n))
-    S=[]
-    for f in range(len(faces)):
-        s=[0]*(dims[f]+2)
-        for x in np.flatnonzero(leq[:,f]).tolist():
-            s=[a+(-1)**(dims[f]-dims[x])*b for a,b in zip(s,_hd_mul(h_star[x],g(x,f),dims[f]+2))]
-        S.append(s)
-    return S
+        if (lo,hi) not in memo:
+            n=int(dims[hi]-dims[lo]+1)//2
+            h=[0]*n
+            between=np.flatnonzero(leq[lo]&leq[:,hi])
+            between=between[between!=(lo if upper else hi)]
+            offset=dims[between]-dims[lo]-1 if upper else dims[hi]-dims[between]-1
+            easy=~(hard[between,hi] if upper else hard[lo,between])
+            # all faces x whose sub-interval has g = 1, of one dimension at once
+            for e, count in enumerate(np.bincount(offset[easy]).tolist()):
+                if count:
+                    for i, c in enumerate(t_minus_one[e][:n]):
+                        h[i]+=count*c
+            for x, e in zip(between[~easy].tolist(),offset[~easy].tolist()):
+                h=[a+b for a,b in zip(h,_hd_mul(t_minus_one[e],g(x,hi) if upper else g(lo,x),n))]
+            memo[(lo,hi)]=tuple(_hd_mul([1,-1],h,n))
+        return memo[(lo,hi)]
+    return hard, g
+
+def _hd_s_tilde_from_h_star(h_star: Sequence[Sequence[int]],dims: np.ndarray,leq: np.ndarray)->list[list[int]]:
+    """
+    **Description:**
+    S~(F, t) = sum_{G <= F} (-1)^(dim F - dim G) h*_G(t) g([G, F], t) for every face F, from
+    the h*-polynomials of the faces, with the g-polynomials of `_hd_g_polynomials` (the
+    recursion over the faces x with G < x <= F).  For all intervals with g = 1 the sum over G
+    is a single matrix product; only the remaining intervals contribute the corrections
+    h*_G(t) (g([G, F], t) - 1).
+    **Arguments:**
+    - `h_star (Sequence[Sequence[int]])`: For every face, the coefficients of its h*-polynomial, constant term first (at most dim + 1 of them; [1] for the empty face).
+    - `dims (np.ndarray)`: The face dimensions (-1 for the empty face).
+    - `leq (np.ndarray)`: Boolean face order, leq[g, f] = (G <= F).
+    **Returns:**
+    - `list[list[int]]`: For every face F, the dim F + 2 integer coefficients of S~(F, t) (Python integers), constant term first.
+    """
+    dims=np.asarray(dims,dtype=np.int64)
+    n_faces=len(dims)
+    width=int(dims.max())+2
+    largest=max((abs(int(c)) for h in h_star for c in h),default=1)
+    # exact arithmetic: 64-bit integers if the sums cannot overflow, Python integers otherwise
+    dtype=np.int64 if largest*n_faces<2**40 else object
+    H=np.zeros((n_faces,width),dtype=dtype)
+    for f, h in enumerate(h_star):
+        H[f,:len(h)]=[int(c) for c in h]
+    sign=np.where((dims[None,:]-dims[:,None])%2==0,1,-1)*leq
+    S=sign.T.astype(dtype)@H
+    hard, g=_hd_g_polynomials(dims,leq)
+    for lo, hi in zip(*(index.tolist() for index in np.nonzero(hard))):
+        g_poly=g(lo,hi)
+        if any(g_poly[1:]):
+            correction=_hd_mul([int(c) for c in H[lo]],(0,)+g_poly[1:],int(dims[hi])+2)
+            for i, c in enumerate(correction):
+                S[hi,i]+=int(sign[lo,hi])*c
+    return [[int(c) for c in S[f,:int(dims[f])+2]] for f in range(n_faces)]
+
+def _hd_h_star_per_face(X: np.ndarray,faces: Sequence[frozenset[int]],dims: np.ndarray)->list[list[int]]:
+    """
+    **Description:**
+    The h*-polynomial of every face F of P = conv(X), computed face by face and without
+    enumerating the lattice points of any dilation kP (the backend "faces" of
+    `hodge_diamond_stringy`).  For a face of dimension d, taken in its own saturated lattice:
+    - d <= 0, a segment, or normalized volume 1 (a unimodular simplex): h* = 1, or 1 + (Vol - 1) t for a segment;
+    - otherwise the numerator of the Hilbert series of the cone over F from Normaliz, whose cost grows with
+      the normalized volume of F;
+    - for faces of normalized volume above `_HD_FAT_FACE_VOLUME`, if LattE is installed: from the Ehrhart
+      polynomial L_F of LattE's `count` (Barvinok's algorithm, whose cost does not depend on the volume),
+      through sum_k L_F(k) t^k = h*_F(t) / (1-t)^(d+1).  These faces are computed in parallel.
+    Every result is checked against h*_F(1) = Vol(F).
+    **Arguments:**
+    - `X (np.ndarray)`: The vertices of P, one per row; they lie on a hyperplane <x, m> = 1 with m integral (Gorenstein support).
+    - `faces (Sequence[frozenset[int]])`: The row-index sets of the faces (the empty face included).
+    - `dims (np.ndarray)`: The face dimensions (-1 for the empty face).
+    **Raises:**
+    - `ValueError`: Raised if PyNormaliz is not installed or the vertices do not lie at height 1.
+    - `RuntimeError`: Raised if the h*-polynomial of a face cannot be determined consistently.
+    **Returns:**
+    - `list[list[int]]`: For every face, the coefficients of its h*-polynomial, constant term first.
+    """
+    if NormalizCone is None:
+        raise ValueError("The backend \"faces\" needs PyNormaliz (`pip install pynormaliz`).")
+    X=np.asarray(X,dtype=int)
+    grading=np.rint(np.linalg.lstsq(X.astype(float),np.ones(len(X)),rcond=None)[0]).astype(int)
+    if (X@grading!=1).any():
+        raise ValueError("The vertices do not lie on a hyperplane at integral height 1.")
+    grading=[grading.tolist()]
+    have_latte=shutil.which("count") is not None
+
+    def hilbert_numerator(cone: Any,d: int,volume: int)->list[int]|None:
+        """h* of a face from the Hilbert series of its cone, or `None` if the series is not of the form h*(t)/(1-t)^(d+1)."""
+        numerator, denominator, shift=cone.HilbertSeries()
+        if shift!=0 or list(denominator)!=[1]*(d+1) or len(numerator)>d+1 or sum(numerator)!=volume:
+            return None
+        return [int(c) for c in numerator]+[0]*(d+1-len(numerator))
+
+    def latte_h_star(rows: np.ndarray,d: int,volume: int)->list[int]|None:
+        """h* of a face from LattE's Ehrhart polynomial, or `None` if LattE fails or the result is inconsistent."""
+        local=np.asarray(lll_reduce(rows-rows[0]),dtype=int)[:,-d:]
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp,"face.vrep").write_text(f"{len(local)} {d+1}\n"+"".join("1 "+" ".join(map(str,v))+"\n" for v in local.tolist()))
+            # signed decomposition in the primal space is much faster on these faces; LattE's default as a fallback
+            for options in (("--irrational-all-primal","--maxdet=100","--exponential"),()):
+                out=subprocess.run(["count","--ehrhart-polynomial",*options,"--vrep","face.vrep"],cwd=tmp,capture_output=True,text=True)
+                lines=out.stdout.strip().splitlines()
+                if out.returncode!=0 or not lines:
+                    continue
+                terms=re.findall(r"([+-])\s*(\d+(?:/\d+)?)\s*\*\s*t\^(\d+)",lines[-1])
+                points=[sum(Fraction(s+c)*k**int(e) for s,c,e in terms) for k in range(d+1)]
+                h=[sum((-1)**i*comb(d+1,i)*points[k-i] for i in range(k+1)) for k in range(d+1)]
+                if terms and all(c.denominator==1 and c>=0 for c in h) and sum(h)==volume:
+                    return [int(c) for c in h]
+        return None
+    h_star: list[list[int]|None]=[None]*len(faces)
+    fat, cones=[], {}
+    threads=NmzSetNumberOfNormalizThreads(1) if NmzSetNumberOfNormalizThreads is not None else None
+    try:
+        # the faces are small problems, for which starting Normaliz' threads costs more than it gains
+        for f, (F,d) in enumerate(zip(faces,np.asarray(dims).tolist())):
+            if d<=0:
+                h_star[f]=[1]
+                continue
+            cone=NormalizCone(cone=X[sorted(F)].tolist(),grading=grading)
+            volume=cone.Multiplicity()
+            if isinstance(volume,(list,tuple)):
+                if len(volume)!=2 or volume[1]!=1:
+                    raise RuntimeError(f"Normaliz returned the non-integral volume {volume} for a lattice polytope.")
+                volume=volume[0]
+            volume=int(volume)
+            if volume==1:
+                h_star[f]=[1]+[0]*d
+            elif d==1:
+                h_star[f]=[1,volume-1]
+            elif volume<=_HD_FAT_FACE_VOLUME:
+                h_star[f]=hilbert_numerator(cone,d,volume)
+                if h_star[f] is None:
+                    fat.append((f,d,volume))
+            else:
+                fat.append((f,d,volume))
+                cones[f]=cone
+    finally:
+        if threads is not None:
+            NmzSetNumberOfNormalizThreads(threads)
+    if fat and have_latte:
+        with ThreadPoolExecutor(max_workers=min(8,os.cpu_count() or 1)) as pool:
+            for (f,d,volume), h in zip(fat,pool.map(lambda job: latte_h_star(X[sorted(faces[job[0]])],job[1],job[2]),fat)):
+                h_star[f]=h
+    for f, d, volume in fat:
+        if h_star[f] is None:
+            # LattE is missing or failed: Normaliz with all its threads, however large the volume
+            cone=cones[f] if f in cones else NormalizCone(cone=X[sorted(faces[f])].tolist(),grading=grading)
+            h_star[f]=hilbert_numerator(cone,d,volume)
+        if h_star[f] is None:
+            raise RuntimeError(f"The h*-polynomial of the face with vertices {sorted(faces[f])} could not be determined.")
+    return h_star
 
 def _hd_mul(a: Sequence[int|Fraction],b: Sequence[int|Fraction],n: int)->list[int|Fraction]:
     """
@@ -1070,10 +1359,10 @@ def sums_to_anticanonical(points: ArrayLike,divisors: ArrayLike,atol: float=1e-8
     b=1-total
     if np.all(b==0):
         return True, np.zeros(points.shape[1],dtype=int)
-    dim=points.shape[1]
-    basis_indices=np.asarray(basis(points),dtype=int)
-    B=points[basis_indices]
-    bB=b[basis_indices]
+    # the rays not in a Q-basis of divisors (`basis_homology` with integral=False) are linearly independent, so the square system has the only possible solution m; it need not be a lattice basis (the rays may contain none), since m is then integral iff a solution exists, which the checks below decide
+    lattice_basis=np.setdiff1d(np.arange(len(points)),np.asarray(basis_homology(points,integral=False),dtype=int)-1)
+    B=points[lattice_basis]
+    bB=b[lattice_basis]
     m=_integer_solve(B,bB,atol=atol)
     if m is None:
         return False, None
@@ -1186,6 +1475,477 @@ def intersecting_cones(fan: Fan,cones: Iterable[Iterable[int]]|None=None,divisor
         if meets!=return_not_intersecting:
             out.append(tuple(c))
     return out
+
+def _bernstein_count(supports: Sequence[np.ndarray],K: np.ndarray)->int:
+    """
+    **Description:**
+    Number of solutions of a generic system of r Laurent polynomials with the given supports in the r-dimensional torus
+    whose character lattice has the saturated basis K (Bernstein), i.e. the normalized mixed volume
+    sum_S (-1)^(r-|S|) Vol(sum_{j in S} P_j), with Vol measured in the coordinates of K. For r=1 this is the lattice length,
+    for r=2 it is Area(P+Q)-Area(P)-Area(Q).
+    **Arguments:**
+    - `supports (Sequence[np.ndarray])`: r point sets (one point per row), each containing the origin and lying in span(K).
+    - `K (np.ndarray)`: Saturated lattice basis, as columns, of shape (n,r).
+    **Raises:**
+    - `RuntimeError`: Raised if the computed mixed volume is not an integer.
+    **Returns:**
+    - `int`: The number of solutions.
+    """
+    r=K.shape[1]
+    coords=[]
+    for F in supports:
+        c=np.unique(np.rint(np.linalg.lstsq(K.astype(float),F.T.astype(float),rcond=None)[0].T).astype(int),axis=0)
+        if r==1:
+            c=np.array([c.min(axis=0),c.max(axis=0)])
+        elif len(c)>r+1 and np.linalg.matrix_rank(c[1:]-c[0])==r:
+            c=c[ConvexHull(c).vertices]
+        coords.append(c)
+    total=0
+    for s in range(1,r+1):
+        for S in combinations(range(r),s):
+            pts=coords[S[0]]
+            for j in S[1:]:
+                pts=np.unique((pts[:,None,:]+coords[j][None,:,:]).reshape(-1,r),axis=0)
+            if len(pts)>r and np.linalg.matrix_rank(pts[1:]-pts[0])==r:
+                total+=(-1)**(r-s)*_normalized_volume(pts,np.eye(r,dtype=int))
+    if total%math.factorial(r):
+        raise RuntimeError("The mixed volume is not an integer.")
+    return total//math.factorial(r)
+
+def _generic_ci_components(supports: Sequence[np.ndarray])->int:
+    """
+    **Description:**
+    Number of irreducible components of the zero set, in the torus with character lattice Z^n, of generic Laurent
+    polynomials f_1,...,f_k with the given nonempty supports (Khovanskii; Zhizhin, arXiv:2409.00188, Thm. 4.4). With the
+    defect d(J)=dim(sum_{j in J} A_j)-|J|: 0 if d(J)<0 for some J (Bernstein), 1 if d(J)>0 for all J, and otherwise the
+    normalized mixed volume (`_bernstein_count`) of the supports in the largest zero-defect subset J_0, measured in the
+    saturated lattice they span. For k=1 this gives 0 (point), the lattice length (segment) or 1; for k=2 it reproduces the
+    face table (0 / MV(P,Q) if dim(P+Q)=2 / lattice length of a segment face / 1).
+    **Arguments:**
+    - `supports (Sequence[np.ndarray])`: The exponent vectors of each f_j, one per row.
+    **Returns:**
+    - `int`: The number of irreducible components (0 if the zero set is empty).
+    """
+    supports=[np.asarray(F,dtype=int)-np.asarray(F,dtype=int)[0] for F in supports]
+    k=len(supports)
+    if k==0:
+        return 1
+    defect={J:np.linalg.matrix_rank(np.vstack([supports[j] for j in J]))-len(J) for s in range(1,k+1) for J in combinations(range(k),s)}
+    if min(defect.values())<0:
+        return 0
+    J0=tuple(sorted(set().union(*(J for J,d in defect.items() if d==0))))
+    if not J0:
+        return 1
+    D=np.vstack([supports[j] for j in J0])
+    return _bernstein_count([supports[j] for j in J0],_saturated_kernel(_saturated_kernel(D).T))
+
+def _toric_divisor_faces(fan_or_vectors: Fan|ArrayLike,divisors_or_polytopes: Sequence[ArrayLike|Polytope],check: bool=True)->tuple[np.ndarray,list,list[np.ndarray],list[np.ndarray],list[list[np.ndarray]]]:
+    """
+    **Description:**
+    Common set-up of `is_favorable` and `has_polynomial_deformations`. For every ray rho it returns the faces
+    Theta_{i,rho}={m in Delta_i: <m,u_rho>=-a_{i,rho}} of the Newton polytopes Delta_i of the defining divisors, i.e. the
+    exponents of the monomials of s_i that survive on the open orbit of D_rho. The faces only depend on the rays, so a fan
+    is only needed for `check`, which tests its cones.
+    **Arguments:**
+    - `fan_or_vectors (Fan|ArrayLike)`: The simplicial toric fan of the ambient space, or only its ray generators, one per row (labelled 1,...,N).
+    - `divisors_or_polytopes (Sequence[ArrayLike|Polytope])`: The defining divisors, as coefficient vectors in the order of the rays, or their Newton polytopes.
+    - `check (bool)`: Whether to verify that no torus orbit O(tau) meeting Y lies in the base locus of at least max(dim(tau)-1,1) of the defining divisors. This needs the cones, i.e. a fan. Defaults to `True`.
+    **Raises:**
+    - `ValueError`: Raised if a defining divisor vanishes identically on some D_rho, if `check` fails, or if `check` is requested without a fan.
+    **Returns:**
+    - `tuple[np.ndarray,list,list[np.ndarray],list[np.ndarray],list[list[np.ndarray]]]`: The ray generators, the one-indexed ray labels, the divisor coefficient vectors, the lattice points of the Newton polytopes, and for each ray the list of the k faces Theta_{i,rho} (as point arrays).
+    """
+    if isinstance(fan_or_vectors,Fan):
+        fan=fan_or_vectors
+        V=np.asarray(fan.vectors(),dtype=int)
+        labels=list(fan.used_labels)
+    else:
+        if check:
+            raise ValueError("The base locus check needs the cones of a fan: pass a Fan, or pass check=False (e.g. for divisors that are nef on the intended fan, for which the check always passes).")
+        fan=None
+        V=np.asarray(fan_or_vectors,dtype=int)
+        if V.ndim!=2:
+            raise ValueError(f"The ray generators must be given one per row, got shape {V.shape}.")
+        labels=list(range(1,len(V)+1))
+    divisors,polytopes=[],[]
+    for x in divisors_or_polytopes:
+        if isinstance(x,Polytope):
+            polytopes.append(x)
+            divisors.append(linebundle_weights_from_Newton_Polytope(V,x))
+        else:
+            divisors.append(np.asarray(x,dtype=int))
+            polytopes.append(Newton_Polytope(V,divisors[-1]))
+    points=[np.asarray(p.points(),dtype=int) for p in polytopes]
+    Z=[V@P.T+d[:,None]==0 for P,d in zip(points,divisors)]
+    if check:
+        row={l:i for i,l in enumerate(labels)}
+        Zp=[np.packbits(z,axis=1) for z in Z]
+        suspect=[]
+        for dim in range(1,min(len(Z)+1,V.shape[1])+1):
+            cones=get_lower_dimensional_cones(fan,dim)
+            C=np.array([[row[l] for l in c] for c in cones],dtype=int).reshape(-1,dim)
+            empty=sum(~np.bitwise_and.reduce(z[C],axis=1).any(axis=1) for z in Zp)
+            suspect+=[cones[i] for i in np.flatnonzero(empty>=max(dim-1,1))]
+        bad=intersecting_cones(fan,cones=suspect,divisors=divisors,polytopes=polytopes,closure=False) if suspect else []
+        if bad:
+            raise ValueError(f"Y has components or divisors in the base locus of the defining divisors (orbits of the cones {bad[:5]}), so the face criterion does not apply.")
+    faces=[]
+    for i,l in enumerate(labels):
+        F=[P[z[i]] for P,z in zip(points,Z)]
+        if any(len(f)==0 for f in F):
+            raise ValueError(f"A defining divisor vanishes identically on D_{l}.")
+        faces.append(F)
+    return V,labels,divisors,points,faces
+
+def is_favorable(fan_or_vectors: Fan|ArrayLike,divisors_or_polytopes: Sequence[ArrayLike|Polytope],check: bool=True)->tuple[bool,dict[int,int]]:
+    """
+    **Description:**
+    Determines which toric prime divisors D_rho split on the generic complete intersection Y={s_1=...=s_k=0} of the given
+    divisors (any codimension k), without computing intersection numbers. On the open orbit of D_rho only the monomials of the
+    faces Theta_{i,rho}={m in Delta_i: <m,u_rho>=-a_{i,rho}} survive, and the components of D_rho cap Y are the closures of the
+    components of this generic torus complete intersection, counted by `_generic_ci_components`. This requires that Y has no
+    components or divisors inside the toric boundary strata on which some s_i vanishes identically, which holds for nef
+    divisors and is verified with `check`. The count only uses the rays, so instead of a fan its ray generators suffice,
+    e.g. for divisors known to be nef on the intended fan (as for a Batyrev-Borisov nef partition); `check` tests the cones
+    of the fan and is then not possible. Note that for complete intersections non-splitting is necessary but not
+    sufficient for favorability: Pic(Y) can contain classes that are not supported on the toric boundary.
+    **Arguments:**
+    - `fan_or_vectors (Fan|ArrayLike)`: The simplicial toric fan of the ambient space, or only its ray generators, one per row (labelled 1,...,N).
+    - `divisors_or_polytopes (Sequence[ArrayLike|Polytope])`: The defining divisors, as coefficient vectors in the order of the rays, or their Newton polytopes.
+    - `check (bool)`: Whether to verify that no torus orbit O(tau) meeting Y lies in the base locus of at least max(dim(tau)-1,1) of the defining divisors. This needs a fan; with ray generators only it must be `False`. Defaults to `True`.
+    **Raises:**
+    - `ValueError`: Raised if a defining divisor vanishes identically on some D_rho, if `check` fails, or if `check` is requested without a fan.
+    **Returns:**
+    - `tuple[bool,dict[int,int]]`: Whether no toric divisor splits, and {one-indexed ray label: number of components} for the splitting divisors.
+    """
+    _,labels,_,_,faces=_toric_divisor_faces(fan_or_vectors,divisors_or_polytopes,check)
+    splitting={}
+    for l,F in zip(labels,faces):
+        k=_generic_ci_components(F)
+        if k>1:
+            splitting[int(l)]=k
+    return not splitting,splitting
+
+def _span_coordinates(F: ArrayLike)->tuple[np.ndarray,np.ndarray]:
+    """
+    **Description:**
+    Saturated basis of the lattice spanned by the differences F-F[0], and the integer coordinates of F-F[0] in it.
+    **Arguments:**
+    - `F (ArrayLike)`: Lattice points, one per row (at least one).
+    **Returns:**
+    - `tuple[np.ndarray,np.ndarray]`: The basis K as columns, shape (n,e), and the coordinates c, shape (len(F),e), with c@K.T=F-F[0].
+    """
+    F=np.asarray(F,dtype=int)
+    G=F-F[0]
+    K=_saturated_kernel(_saturated_kernel(G).T)
+    if K.shape[1]==0:
+        return K,np.zeros((len(F),0),dtype=int)
+    c=np.rint(np.linalg.lstsq(K.astype(float),G.T.astype(float),rcond=None)[0].T).astype(int)
+    if not np.array_equal(c@K.T,G):
+        raise RuntimeError("The points are not integral combinations of the saturated span basis.")
+    return K,c
+
+def _vertices(F: ArrayLike)->np.ndarray:
+    """
+    **Description:**
+    Vertices of conv(F) for a point set F of any dimension (the convex hull is taken in an orthonormal basis of the affine span).
+    **Arguments:**
+    - `F (ArrayLike)`: Lattice points, one per row (at least one).
+    **Returns:**
+    - `np.ndarray`: The vertices, one per row.
+    """
+    F=np.unique(np.asarray(F,dtype=int),axis=0)
+    if len(F)<=2:
+        return F
+    G=(F-F[0]).astype(float)
+    e=np.linalg.matrix_rank(G)
+    if e==0:
+        return F[:1]
+    Q=np.linalg.svd(G,full_matrices=False)[2][:e].T
+    c=G@Q
+    if e==1:
+        return F[[c[:,0].argmin(),c[:,0].argmax()]]
+    return F[np.sort(ConvexHull(c).vertices)]
+
+def _relative_interior_points(F: ArrayLike)->np.ndarray:
+    """
+    **Description:**
+    Lattice points in the relative interior of conv(F), for a lattice polytope of any dimension. A point is its own relative interior.
+    **Arguments:**
+    - `F (ArrayLike)`: Lattice points whose convex hull is the polytope (e.g. its vertices), one per row.
+    **Returns:**
+    - `np.ndarray`: The relative interior lattice points, one per row.
+    """
+    F=np.unique(np.asarray(F,dtype=int),axis=0)
+    K,c=_span_coordinates(F)
+    e=K.shape[1]
+    if e==0:
+        return F[:1]
+    if e==1:
+        return F[0]+np.arange(c.min()+1,c.max())[:,None]*K[:,0]
+    pts=np.asarray(Polytope(c).interior_points(),dtype=int).reshape(-1,e)
+    return F[0]+pts@K.T
+
+def _koszul_d1_rank(blocks: Sequence[tuple[tuple[int,...],int]],S: Sequence[np.ndarray],coeffs: Sequence[Sequence[int]],interior: Callable[[tuple[int,...]],np.ndarray],prime: int)->int:
+    """
+    **Description:**
+    Rank over F_prime of the d_1 differential of the Koszul spectral sequence in `_generic_ci_hodge_q0`, in its dual form
+    +_{J'} V_{J'} -> +_J V_J, where V_J is spanned by the relative interior lattice points of Theta_J and the block J'=J-{J[a]} -> J
+    is (-1)^a times multiplication by f_{J[a]}=sum_m coeffs[J[a]][m] x^{S[J[a]][m]}.
+    **Arguments:**
+    - `blocks (Sequence[tuple[tuple[int,...],int]])`: The nonzero blocks, as (target J, position a in J of the multiplied f).
+    - `S (Sequence[np.ndarray])`: The supports of the f_i.
+    - `coeffs (Sequence[Sequence[int]])`: The coefficients of the f_i, aligned with `S`.
+    - `interior (Callable[[tuple[int,...]],np.ndarray])`: Returns the relative interior lattice points of Theta_J.
+    - `prime (int)`: The prime modulus.
+    **Raises:**
+    - `RuntimeError`: Raised if a product leaves the relative interior (Theta_J' and Theta_J of different dimension).
+    **Returns:**
+    - `int`: The rank.
+    """
+    targets=sorted({J for J,_ in blocks})
+    sources=sorted({J[:a]+J[a+1:] for J,a in blocks})
+    row,n_rows={},0
+    for J in targets:
+        for m in interior(J):
+            row[(J,tuple(m))]=n_rows
+            n_rows+=1
+    col,n_cols={},0
+    for J in sources:
+        col[J]=n_cols
+        n_cols+=len(interior(J))
+    M=np.zeros((n_rows,n_cols),dtype=object)
+    for J,a in blocks:
+        Jp=J[:a]+J[a+1:]
+        sign=-1 if a%2 else 1
+        for t,m in enumerate(interior(Jp)):
+            for v,c in zip(S[J[a]],coeffs[J[a]]):
+                r=row.get((J,tuple(m+v)))
+                if r is None:
+                    raise RuntimeError("Multiplication by f_i leaves the relative interior.")
+                M[r,col[Jp]+t]=(M[r,col[Jp]+t]+sign*c)%prime
+    return nmod_mat(n_rows,n_cols,[int(x) for x in M.ravel()],prime).rank()
+
+def _generic_ci_hodge_q0(supports: Sequence[np.ndarray],q: int)->int:
+    """
+    **Description:**
+    h^{q,0} of a smooth compactification of the zero set Z, in the torus with character lattice Z^n, of generic Laurent
+    polynomials f_1,...,f_k with the given supports (summed over the components of Z; a birational invariant). Only the
+    Newton polytopes matter, so each support is replaced by its vertices. Z is first reduced to the saturated lattice
+    spanned by the supports (a (C*)-factor compactifies to a projective space, which does not change h^{q,0}) and, if a
+    subset J_0 of zero defect exists, to the `_bernstein_count` many disjoint translates of the subtorus cut out by the
+    f_j, j in J_0, on which the other f_j restrict to generic polynomials with projected supports (cf.
+    `_generic_ci_components`). Afterwards all defects are positive, Z is irreducible of dimension p-k, and
+    h^{q,0}=h^q(O_Zbar) is read off from the Koszul resolution of Zbar in a toric compactification on which all f_i are
+    nef: by Batyrev-Borisov vanishing (arXiv:alg-geom/9412017), H^j(O(-D_J)) is nonzero only for j=dim(Theta_J), where
+    it has dimension l*(Theta_J) (relative interior lattice points of Theta_J=sum_{i in J} conv(A_i)), so the E_1 page has
+    l*(Theta_J) at total degree dim(Theta_J)-|J|. The d_1 differentials connect equal-dimensional Theta_J'⊂Theta_J and are
+    multiplication by the f_i; they are injective if they are multiplication by one f_i or map into Theta_{i,j} (f_i,f_j
+    coprime), and are otherwise computed as ranks over F_p with random coefficients. Higher differentials are verified to
+    vanish, which for k<=2 always holds.
+    **Arguments:**
+    - `supports (Sequence[np.ndarray])`: The exponent vectors of each f_j, one per row.
+    - `q (int)`: The Hodge degree.
+    **Raises:**
+    - `NotImplementedError`: Raised if a higher differential of the spectral sequence can change h^{q,0} (only possible for k>=3).
+    **Returns:**
+    - `int`: The Hodge number h^{q,0} (0 if Z is empty).
+    """
+    if q<0:
+        return 0
+    S=[_vertices(F) for F in supports]
+    k=len(S)
+    if k==0:
+        return int(q==0)
+    S=[F-F[0] for F in S]
+    K,c=_span_coordinates(np.vstack([np.zeros((1,S[0].shape[1]),dtype=int)]+S))
+    p=K.shape[1]
+    ends=np.cumsum([1]+[len(F) for F in S])
+    S=[c[a:b] for a,b in zip(ends[:-1],ends[1:])]
+    defect={J:np.linalg.matrix_rank(np.vstack([S[j] for j in J]))-len(J) for s in range(1,k+1) for J in combinations(range(k),s)}
+    if min(defect.values())<0:
+        return 0
+    J0=tuple(sorted(set().union(*(J for J,d in defect.items() if d==0))))
+    if J0:
+        K0=_saturated_kernel(_saturated_kernel(np.vstack([S[j] for j in J0])).T)
+        N=_bernstein_count([S[j] for j in J0],K0)
+        W=_saturated_kernel(K0.T).T
+        return N*_generic_ci_hodge_q0([S[j]@W.T for j in range(k) if j not in J0],q) if N else 0
+    if q>p-k:
+        return 0
+    if q==0:
+        return 1
+    dims={J:d+len(J) for J,d in defect.items()}
+    pos={}
+    for J,j in dims.items():
+        pos.setdefault((len(J),j),[]).append(J)
+    cache={}
+    def interior(J: tuple[int,...])->np.ndarray:
+        if J not in cache:
+            pts=S[J[0]]
+            for i in J[1:]:
+                pts=_vertices((pts[:,None,:]+S[i][None,:,:]).reshape(-1,p))
+            cache[J]=_relative_interior_points(pts)
+        return cache[J]
+    prime=(1<<61)-1
+    rng=np.random.default_rng(0)
+    coeffs=[[int(x) for x in rng.integers(1,prime,size=len(F))] for F in S]
+    ranks={}
+    def rank(s: int,j: int)->int:
+        if (s,j) not in ranks:
+            src=set(pos.get((s-1,j),()))
+            tgt=pos.get((s,j),[])
+            blocks=[(J,a) for J in tgt for a in range(len(J)) if J[:a]+J[a+1:] in src and len(interior(J[:a]+J[a+1:]))]
+            if not blocks:
+                ranks[(s,j)]=0
+            elif len(tgt)==1 and (len(blocks)==1 or len(tgt[0])==2):
+                ranks[(s,j)]=sum(len(interior(J[:a]+J[a+1:])) for J,a in blocks)
+            else:
+                ranks[(s,j)]=_koszul_d1_rank(blocks,S,coeffs,interior,prime)
+        return ranks[(s,j)]
+    def E2(s: int,j: int)->int:
+        size=sum(len(interior(J)) for J in pos.get((s,j),()))
+        return size-rank(s,j)-rank(s+1,j) if size else 0
+    h=0
+    for (s,j) in pos:
+        if j-s!=q:
+            continue
+        e=E2(s,j)
+        if e==0:
+            continue
+        for r in range(2,k+1):
+            for t in ((s+r,j+r-1),(s-r,j-r+1)):
+                if t in pos and E2(*t):
+                    raise NotImplementedError(f"The differential d_{r} between the Koszul E_2 terms at {(s,j)} and {t} may be nonzero.")
+        h+=e
+    return h
+
+def _coefficient_and_automorphism_ranks(V: np.ndarray,divisors: Sequence[np.ndarray],points: Sequence[np.ndarray])->tuple[int,int]:
+    """
+    **Description:**
+    For generic sections s_i (random coefficients over F_p) of the D_i, computes K=dim +_i S_{D_i}/I_{D_i}, the number of
+    coefficients of the s_i modulo the redefinitions s_i -> s_i+sum_j g_ij s_j (S the Cox ring, I=(s_1,...,s_k), spanned
+    in degree D_i by x^{m'}s_j with m' in P_{D_i-D_j}), and R, the dimension of the image in it of the infinitesimal
+    automorphisms of X, xi -> (xi(s_i))_i. These are the torus vector fields, acting on chi^m by m_t, and the Demazure
+    root fields x^{m_r} d/dx_rho (<m_r,u_rho>=-1, <m_r,u_rho'> >= 0 otherwise), sending chi^m to (<m,u_rho>+a_rho) chi^{m+m_r}.
+    R < n+#roots if vector fields of X vanish along Y.
+    **Arguments:**
+    - `V (np.ndarray)`: The ray generators, one per row.
+    - `divisors (Sequence[np.ndarray])`: The coefficient vectors of the D_i.
+    - `points (Sequence[np.ndarray])`: The lattice points of the Newton polytopes Delta_i.
+    **Returns:**
+    - `tuple[int,int]`: K and R.
+    """
+    prime=(1<<61)-1
+    rng=np.random.default_rng(0)
+    k,n=len(divisors),V.shape[1]
+    row,offset={},0
+    for i,P in enumerate(points):
+        for t,m in enumerate(P):
+            row[(i,tuple(m))]=offset+t
+        offset+=len(P)
+    coeffs=[rng.integers(1,prime,size=len(P)) for P in points]
+    columns=[]
+    for i in range(k):
+        for j in range(k):
+            C=points[i]-points[j][0]
+            for mp in C[np.all(V@C.T+(divisors[i]-divisors[j])[:,None]>=0,axis=0)]:
+                columns.append({row[(i,tuple(m+mp))]:int(c) for m,c in zip(points[j],coeffs[j])})
+    n_ideal=len(columns)
+    E=V@np.asarray(Newton_Polytope(V,np.ones(len(V),dtype=int)).points(),dtype=int).T
+    roots=[(int(np.flatnonzero(E[:,t]==-1)[0]),mr) for t,mr in enumerate(np.asarray(Newton_Polytope(V,np.ones(len(V),dtype=int)).points(),dtype=int)) if (E[:,t]==-1).sum()==1]
+    for t in range(n):
+        columns.append({row[(i,tuple(m))]:int(c)*int(m[t])%prime for i in range(k) for m,c in zip(points[i],coeffs[i]) if m[t]%prime})
+    for rho,mr in roots:
+        col={}
+        for i in range(k):
+            for m,c in zip(points[i],coeffs[i]):
+                e=int(m@V[rho])+int(divisors[i][rho])
+                if e:
+                    r=row[(i,tuple(m+mr))]
+                    col[r]=(col.get(r,0)+int(c)*e)%prime
+        columns.append(col)
+    def rank(cols: Sequence[dict[int,int]])->int:
+        if not cols:
+            return 0
+        M=[0]*(offset*len(cols))
+        for t,col in enumerate(cols):
+            for r,v in col.items():
+                M[r*len(cols)+t]=v%prime
+        return nmod_mat(offset,len(cols),M,prime).rank()
+    r_ideal=rank(columns[:n_ideal])
+    return offset-r_ideal,rank(columns)-r_ideal
+
+def has_polynomial_deformations(fan: Fan,divisors_or_polytopes: Sequence[ArrayLike|Polytope],check: bool=True,hodge_number: int|None=None)->tuple[bool|None,dict[int,int]]:
+    """
+    **Description:**
+    Determines whether all complex structure deformations of the generic Calabi-Yau complete intersection
+    Y={s_1=...=s_k=0} of dimension d=n-k>=3 are polynomial, i.e. realized by varying the coefficients of the s_i; this is
+    the mirror counterpart of `is_favorable`.
+    Local part: with N=+_i O_Y(D_i), the non-polynomial deformations are ker(H^1(T_X|_Y)->H^1(N)). The generalized Euler
+    sequence and h^{0,1}(Y)=h^{0,2}(Y)=0 give H^1(T_X|_Y)=+_rho H^1(O_Y(D_rho)), and with E_rho=D_rho cap Y,
+    K_{E_rho}=E_rho|_{E_rho} (adjunction on Y) and Serre duality, h^1(O_Y(D_rho))=h^{d-2,0}(E_rho). Like the splitting in
+    `is_favorable`, this only depends on the faces Theta_{i,rho} and is computed by `_generic_ci_hodge_q0`. For a
+    hypersurface of a reflexive pair the sum reproduces Batyrev's sum_theta l*(theta)l*(theta^vee) over the codimension-2
+    faces theta of the Newton polytope (arXiv:alg-geom/9310003). The sum is exact if H^1(N)=0, which holds by
+    Kawamata-Viehweg if every D_i|_Y is big (always for hypersurfaces). Otherwise it is only an upper bound: for fibre
+    products such as the Schoen threefold (P2xP2xP1)[(3,0,1),(0,3,1)], where E_rho=E_1xE_2 gives 4 but all 19
+    deformations are polynomial, the classes map injectively to H^1(N).
+    Global part, used for non-big D_i if `hodge_number`=h^{d-1,1}(Y) is given: the polynomial deformations are the image
+    in H^1(T_Y) of the K independent coefficients of the s_i, whose kernel is their intersection with the image of
+    H^0(T_X|_Y). The latter has dimension n+sum_rho p_g(E_rho) (Euler sequence and h^0(O_Y(D_rho))=1+h^0(K_{E_rho})) and
+    contains the R-dimensional image of the infinitesimal automorphisms of X (`_coefficient_and_automorphism_ranks`).
+    Hence h^{d-1,1}-K+R <= #non-polynomial <= h^{d-1,1}-K+n+sum_rho p_g(E_rho).
+    **Arguments:**
+    - `fan (Fan)`: The complete simplicial toric fan of the ambient space.
+    - `divisors_or_polytopes (Sequence[ArrayLike|Polytope])`: The nef defining divisors, summing to the anticanonical class, as coefficient vectors in the order of `fan.vectors()`, or their Newton polytopes.
+    - `check (bool)`: Whether to verify that the divisors are nef and to run the base locus check of `is_favorable`. Defaults to `True`.
+    - `hodge_number (int|None)`: h^{d-1,1}(Y) (e.g. `F_Theory_Uplift.h31()`), used to decide the cases with non-big D_i|_Y. Defaults to `None`.
+    **Raises:**
+    - `ValueError`: Raised if d<3, if the divisors do not sum to the anticanonical class, if a divisor is not nef (with `check`), if the bounds are inconsistent with `hodge_number`, or as in `is_favorable`.
+    - `NotImplementedError`: Raised if a higher differential in `_generic_ci_hodge_q0` can contribute (only possible for k>=3).
+    **Returns:**
+    - `tuple[bool|None,dict[int,int]]`: Whether all complex structure deformations are polynomial (`None` if this cannot be decided; a warning then gives the bounds), and {one-indexed ray label: h^{d-2,0}(D_rho cap Y)} for the rays with H^1(O_Y(D_rho)) != 0 (empty if the answer is `True`). The values sum to the number of non-polynomial deformations if all D_i|_Y are big and bound it from above otherwise.
+    """
+    V,labels,divisors,points,faces=_toric_divisor_faces(fan,divisors_or_polytopes,check)
+    k=len(divisors)
+    d=V.shape[1]-k
+    if d<3:
+        raise ValueError(f"Y has dimension {d}<3, where h^{{0,2}}(Y) need not vanish.")
+    b=1-np.sum(divisors,axis=0)
+    m=np.rint(np.linalg.lstsq(V.astype(float),b.astype(float),rcond=None)[0]).astype(int)
+    if not np.array_equal(V@m,b):
+        raise ValueError("The divisors do not sum to the anticanonical class, so Y is not Calabi-Yau.")
+    if check:
+        not_nef=[i for i,D in enumerate(divisors) if not is_nef(fan,D)]
+        if not_nef:
+            raise ValueError(f"The divisors {not_nef} (zero-indexed) are not nef.")
+    nonpolynomial={}
+    for l,F in zip(labels,faces):
+        h=_generic_ci_hodge_q0(F,d-2)
+        if h:
+            nonpolynomial[int(l)]=h
+    upper=sum(nonpolynomial.values())
+    if not upper:
+        return True,{}
+    G=[P-P[0] for P in points]
+    not_big=[i for i in range(k) if any(np.linalg.matrix_rank(np.vstack([G[j] for j in J+(i,)]))<len(J)+d for s in range(k+1) for J in combinations(range(k),s))]
+    if not not_big:
+        return False,nonpolynomial
+    lower=0
+    if hodge_number is not None:
+        K,R=_coefficient_and_automorphism_ranks(V,divisors,points)
+        upper=min(upper,int(hodge_number)-K+V.shape[1]+sum(_generic_ci_hodge_q0(F,d-1) for F in faces))
+        lower=max(0,int(hodge_number)-K+R)
+        if lower>upper:
+            raise ValueError(f"The bounds {lower} <= #non-polynomial <= {upper} are inconsistent; is hodge_number={hodge_number} h^{{{d-1},1}}(Y)?")
+        if upper==0:
+            return True,{}
+        if lower>0:
+            return False,nonpolynomial
+    hint="" if hodge_number is not None else f" Pass hodge_number=h^{{{d-1},1}}(Y) to sharpen the bounds."
+    warnings.warn(f"D_i|_Y is not big for i in {not_big} (zero-indexed), so H^1(N_Y) may be nonzero and only {lower} <= #non-polynomial deformations <= {upper} is known.{hint}")
+    return None,nonpolynomial
 
 def intersection_number_surfaces(IN: Mapping[tuple[int,...],int|float],basis_len: int|None=None)->tuple[dict[tuple[int,int,int],int|float],dict[int,tuple[int,int]]]:
     """
@@ -1507,6 +2267,32 @@ def _unimodular_column_subset(P: fmpz_mat,max_nodes: int=10**3)->list[int]|None:
         return None
     return search(P,[],set())
 
+def curves_from_gv(gv,dim=None):
+    if len(gv)==0:
+        return np.array([])
+    if dim is None:
+        if isinstance(gv[0][0][0], tuple):
+            dim=4
+        else:
+            dim=3
+    curves=[]
+    if dim==4:
+        for entry in gv:
+            k=np.array(entry[0][0])
+            curves.append(k)
+    if dim==3:
+        for entry in gv:
+            k=np.array(entry[0])
+            curves.append(k)
+    curves = np.asarray(curves)
+    _, indices = np.unique(curves, axis=0, return_index=True)
+    curves = curves[np.sort(indices)]
+    return curves
+
+def create_targets(curves,deg_curves):
+    targets = np.vstack([(k * np.array(curves)).tolist() for k in range(1, deg_curves + 1)])
+    return targets
+
 def intersection_form_H22_vertical_from_gram_matrix(M: ArrayLike,max_nodes: int=10**3)->tuple[np.ndarray,np.ndarray]:
     """
     **Description:**
@@ -1546,7 +2332,7 @@ def intersection_form_H22_vertical_from_gram_matrix(M: ArrayLike,max_nodes: int=
     to_int64=lambda X,n,m: np.array([int(x) for row in X.tolist() for x in row],dtype=np.int64).reshape(n,m)
     return to_int64(C,r,N), to_int64(G,r,r)
 
-def intersection_form_H22_vertical(IN_in_basis: Mapping[tuple[int,...],int|float],max_nodes: int=10**3)->tuple[np.ndarray,np.ndarray,dict[int,tuple[int,int]],np.ndarray]:
+def intersection_form_H22_vertical(IN_in_basis: Mapping[tuple[int,...],int|float],max_nodes: int=10**3,return_gram=False)->tuple[np.ndarray,np.ndarray,dict[int,tuple[int,int]],np.ndarray]:
     """
     **Description:**
     Compute the intersection form on the vertical cycles in H22(X,Z). If possible, the basis consists of products of
@@ -1563,8 +2349,9 @@ def intersection_form_H22_vertical(IN_in_basis: Mapping[tuple[int,...],int|float
     """
     mat,dict_pair_indices,inv_dict=gram_matrix(IN_in_basis)
     C,G=intersection_form_H22_vertical_from_gram_matrix(mat,max_nodes)
-    return C, G, inv_dict,mat
-
+    if return_gram:
+        return C, G, inv_dict,mat
+    return C, G, inv_dict
 def _stabilizer_order(idx: np.ndarray)->np.ndarray:
     """
     **Description:**
@@ -1805,7 +2592,9 @@ def saturate_glsm(Q,protected_rows=None,primes=None,return_combinations=False):
     first (later rows first) and the protected rows last (again later rows first), and every pivot row is replaced by the
     p-th part of its kernel combination, which involves, besides the pivot row, only rows kept in that pass. Hence a
     combination involving an unprotected row replaces an unprotected row, and a protected row is replaced only by a
-    combination of protected rows alone: the protected rows stay within themselves. For the matrix of `glsm_from_refinement`
+    combination of protected rows alone: the protected rows stay within themselves. In the combination replacing an
+    unprotected row the protected rows are subtracted rather than added, i.e. their coefficients are taken in
+    {-(p-1),...,0} instead of {0,...,p-1} (e.g. (q - d)/2 instead of (q + d)/2 for p = 2), which spans the same lattice. For the matrix of `glsm_from_refinement`
     with block sizes s, the D7 rows are `np.r_[s[0]:s[0]+s[1], s[0]+s[1]+1:s[0]+s[1]+1+s[3]]`.
     **Arguments:**
     - `Q (ArrayLike)`: Integer matrix with linearly independent rows, e.g. a GLSM charge matrix.
@@ -1848,9 +2637,11 @@ def saturate_glsm(Q,protected_rows=None,primes=None,return_combinations=False):
                 for k in np.flatnonzero(N[:,j]):
                     if k!=i: N[k]=(N[k]-N[k,j]*N[i])%p
                 pivots.append(int(j)); i+=1
-            new=N[:len(pivots)].astype(object)@Q
+            M=N[:len(pivots)].copy()   # protected rows enter an unprotected pivot's combination with coefficients in {-(p-1),...,0}
+            M[(~prot[pivots])[:,None]&prot[None,:]&(M!=0)]-=p
+            new=M.astype(object)@Q
             if (new%p).any(): raise RuntimeError("inexact kernel combination in saturate_glsm")
-            Q[pivots]=new//p; T[pivots]=(N[:len(pivots)].astype(object)@T)/p
+            Q[pivots]=new//p; T[pivots]=(M.astype(object)@T)/p
     if max((abs(int(x)) for x in Q.flat),default=0)>np.iinfo(np.int64).max: raise OverflowError('Saturated entries exceed int64; use the exact object array.')
     if not return_combinations: return Q.astype(np.int64)
     combos={i:{int(j):float(T[i,j]) for j in np.flatnonzero(T[i]!=0)} for i in range(r) if any(T[i,j]!=int(i==j) for j in range(r))}
@@ -2271,3 +3062,229 @@ def _block_alignment(T,rows_k,rows_r,W,tol=1e-6)->np.ndarray|None:
     return None
 
 ######################END SYMMETRIC D7#########################
+
+from collections.abc import Mapping
+from itertools import permutations
+from typing import Any
+import numpy as np
+
+def dict_to_array(tensor: Mapping[int,Any]|Mapping[tuple[int,...],Any],n: int|None=None)->np.ndarray:
+    """
+    **Description:**
+    Converts a symmetric tensor stored as a dictionary into a dense, fully symmetric NumPy array with zero-based indices.
+    The keys are one-indexed: integers or 1-tuples for rank 1, sorted tuples for higher rank (as returned e.g. by
+    `tensor_symm_in_basis` or `toric_chern_class`). Every key is written to all its index permutations; missing entries are 0.
+    **Arguments:**
+    - `tensor (Mapping[int,Any]|Mapping[tuple[int,...],Any])`: The symmetric tensor.
+    - `n (int|None)`: Length of every axis. Needed if the highest indices only have zero entries, which are dropped from the dictionary (e.g. `len(basis)` or `Q.shape[0]`). Defaults to `None` (the largest index in the keys).
+    **Raises:**
+    - `ValueError`: Raised if the keys have different ranks, or an index is smaller than 1 or larger than `n`.
+    **Returns:**
+    - `np.ndarray`: The array of shape `(n,)*rank`; of integer type if all values are integers, of float type otherwise.
+    """
+    if not tensor:
+        return np.zeros(0 if n is None else n,dtype=int)
+    keys=[(k,) if isinstance(k,(int,np.integer)) else tuple(k) for k in tensor]
+    rank=len(keys[0])
+    if any(len(k)!=rank for k in keys):
+        raise ValueError("All keys must have the same rank.")
+    K=np.array(keys,dtype=np.int64)-1
+    vals=np.array(list(tensor.values()))
+    if vals.dtype==object:
+        vals=vals.astype(float)
+    if n is None:
+        n=int(K.max())+1
+    if K.min()<0 or K.max()>=n:
+        raise ValueError(f"The indices must lie between 1 and n={n}.")
+    arr=np.zeros((n,)*rank,dtype=vals.dtype)
+    for p in permutations(range(rank)):
+        arr[tuple(K[:,p].T)]=vals
+    return arr
+
+def compute_gv_h11(generators, grading_vector, q, intnums, **kwargs):
+    """compute_gv, but with h11 taken from q.shape[0] instead of the largest index in intnums."""
+    q = np.asarray(q)
+    h11 = q.shape[0]
+    intnums = {k: v for k, v in intnums.items() if v != 0}
+    m = max(i for k in intnums for i in k)
+    if m == h11 - 1:
+        return compute_gv(generators, grading_vector, q, intnums, **kwargs)
+    perm = np.arange(h11)
+    perm[[m, h11 - 1]] = perm[[h11 - 1, m]]        # transposition, so perm is its own inverse
+    intnums = {tuple(sorted(int(perm[i]) for i in k)): v for k, v in intnums.items()}
+    if kwargs.get("target_points") is not None:
+        kwargs["target_points"] = np.atleast_2d(kwargs["target_points"])[:, perm]
+    res = compute_gv(np.asarray(generators)[:, perm], np.asarray(grading_vector)[perm], q[perm], intnums, **kwargs)
+    back = lambda v: tuple(int(x) for x in np.asarray(v)[perm])
+    if res and isinstance(res[0][0][0], tuple):     # non-threefold output: ((v, c), gv)
+        return [((back(v), c), gv) for (v, c), gv in res]
+    return [(back(v), gv) for v, gv in res]
+
+def get_fiber_fan(F):
+    fiber_vecs=project_points(F.blow_down_fan().vectors()[:-2],F.u)
+    cones=F.blow_down_fan().cones()
+    new_cones=set()
+    for i in range(np.rint(len(cones)/2).astype(int)):
+        new_cones.add(cones[2*i][:-1])
+    vc=VectorConfiguration(fiber_vecs)
+    fan=Fan(vc=vc,cones=new_cones)
+    return fan
+
+def get_fiber_glsm(F, Q=None):
+    """
+    GLSM of the fiber fan `get_fiber_fan(F)` as a sub-block of `F.Qd7()` (or of another charge matrix `Q` with the
+    columns of `F.vectors_M_conv_toric_fan()`).
+    Columns: the fiber rays (blow-down fan without rho_+, rho_-) in the order of `get_fiber_fan(F).vectors()`.
+    Rows: the rows of Q that vanish outside these columns.
+    Returns (Q_fib, rows, cols) with Q_fib = Q[rows][:, cols].
+    """
+    Q = F.Qd7() if Q is None else np.asarray(Q)
+    V = np.asarray(F.vectors_M_conv_toric_fan(), dtype=int)
+    col = {tuple(map(int, v)): k for k, v in enumerate(V)}
+    cols = np.array([col[tuple(map(int, v))] for v in F.blow_down_fan().vectors()[:-2]])
+    outside = np.setdiff1d(np.arange(Q.shape[1]), cols)
+    rows = np.flatnonzero(~Q[:, outside].any(axis=1))
+    Q_fib = Q[np.ix_(rows, cols)]
+    fib = np.asarray(F.blow_down_fan().vectors()[:-2], dtype=int)
+    n, d = len(fib), np.linalg.matrix_rank(fib)
+    if (Q_fib @ fib).any():
+        raise ValueError("Q_fib does not annihilate the fiber rays.")
+    if len(rows) != n - d or np.linalg.matrix_rank(Q_fib) != n - d:
+        raise ValueError(f"Only {np.linalg.matrix_rank(Q_fib)} of the {n-d} fiber relations are rows of Q.")
+    return Q_fib, rows, cols
+
+def cayley_polytope(polytopes):
+    """
+    **Description:**
+    Constructs the Cayley polytope of the Newton polytopes Delta_1, ..., Delta_r of an
+    r-part nef partition,
+        Cay(Delta_1, ..., Delta_r) = conv(Delta_1 x {e_1}, ..., Delta_r x {e_r}),
+    where e_j is the j-th unit vector of Z^r.
+    **Arguments:**
+    - `polytopes (Sequence[Polytope | ArrayLike])`: The Newton polytopes Delta_j (or their
+      lattice points, one per row), all in the same lattice M.
+    **Raises:**
+    - `ValueError`: Raised if the polytopes do not all live in the same lattice.
+    **Returns:**
+    - `Polytope`: The Cayley polytope in M x Z^r.
+    """
+    pts = [np.asarray(P.points() if hasattr(P, "points") else P, dtype=int) for P in polytopes]
+    if len({p.shape[1] for p in pts}) != 1:
+        raise ValueError("All Newton polytopes must live in the same lattice M.")
+    r = len(pts)
+    E = np.eye(r, dtype=int)
+    cayley_pol = Polytope(np.concatenate(
+        [np.column_stack([p, np.tile(E[j], (len(p), 1))]) for j, p in enumerate(pts)],
+        axis=0))
+    return cayley_pol
+
+def _so8_chain(q: np.ndarray,d7_cols: Sequence[int])->np.ndarray:
+    """
+    **Description:**
+    The symmetric rows of `symmetric_so8_rows` for a given choice of the D7 columns, see there.
+    **Arguments:**
+    - `q (np.ndarray)`: Integer matrix whose rows are a basis of the D7 lattice.
+    - `d7_cols (Sequence[int])`: The columns of the D7 points, one per row of `q`.
+    **Raises:**
+    - `ValueError`: Raised, with the reason, if the rows are not a single SO(8) chain with respect to these columns.
+    **Returns:**
+    - `np.ndarray`: The symmetric rows, the row of the D7 point furthest from rho_- first.
+    """
+    r,n=q.shape; T=np.asarray(d7_cols,dtype=int).ravel(); rest=np.setdiff1d(np.arange(n),T)
+    if len(T)!=r or len(set(T.tolist()))!=r: raise ValueError(f"{r} distinct D7 columns are needed, one per row.")
+    B=q[:,T]; det=int(round(np.linalg.det(B)))
+    if det==0: raise ValueError("The block of the rows on the D7 columns is singular.")
+    adj=np.rint(det*np.linalg.inv(B)).astype(np.int64)
+    if not np.array_equal(adj@B,det*np.eye(r,dtype=np.int64)): raise ValueError("Inexact adjugate of the D7 block.")
+    # canonical rows: N[k] is the primitive relation in the span of q supported on the D7 column T[k] and on the other columns, -m_k at T[k]
+    N=-np.sign(det)*(adj@q); N//=np.gcd.reduce(N,axis=1)[:,None]
+    if (N[:,rest]<0).any(): raise ValueError("A canonical D7 row has a negative entry outside the D7 columns.")
+    order=np.argsort(N[:,rest].sum(axis=1),kind="stable"); N=N[order]
+    if (np.diff(N[:,rest],axis=0)<0).any(): raise ValueError("The canonical D7 rows are not totally ordered: not a single SO(8) chain.")
+    S=np.vstack([N[:1],np.diff(N,axis=0)])[::-1]
+    # S = A @ q with A = S[:,T] @ B^-1 must be unimodular
+    A=S[:,T]@adj
+    if (A%det).any() or abs(int(np.prod(N[np.arange(r),T[order]])))!=abs(det):
+        raise ValueError("The symmetric rows and the input rows do not generate the same lattice.")
+    return S
+
+def symmetric_so8_rows(q: ArrayLike,d7_cols: Sequence[int]|None=None)->np.ndarray:
+    """
+    **Description:**
+    Brings the D7 rows of one SO(8) stack (four rows) to the symmetric basis, in which the SO(8) locus is z^mu = 1/2 for all mu
+    and the D7 curves with non-vanishing GV invariants are the unit vectors. The input may be any Z-basis of the D7 lattice:
+    the D7 rows of `Qd7()`, of `Qsat()`, or rows that are already symmetric, which are returned unchanged.
+    The construction only uses the lattice spanned by the rows and the D7 columns:
+    1. For every D7 column d there is, up to scale, one relation in the span of the rows that vanishes on the other D7 columns.
+       Its primitive multiple N_d with negative entry -m_d at d is the row of `glsm_from_refinement`, m_d d = sum_j s_j v_j with
+       v_j the non-D7 rays (rho_- and fiber rays) and s_j >= 0. It does not depend on the basis the rows are given in.
+    2. On an SO(8) chain the non-D7 parts s of these rows are totally ordered, N_1 < N_2 < ... componentwise: the D7 points move
+       step by step from rho_- towards the O7 point (in the Tate form, N_p belongs to the coefficient of h^p of the D7 polynomial
+       eta^2 - h chi in the O7 section h, and its roots, the D7 positions, are the ratios of consecutive coefficients).
+    3. The symmetric rows are the consecutive differences N_p - N_(p-1) (N_0 = 0), returned with the last difference first:
+       each has exactly one negative entry, -m_p at its own D7 column, the entry m_(p-1) at the D7 column of its predecessor
+       (rho_- for the last row) and non-negative entries on the fiber rays.
+    4. The result is verified to be a unimodular transformation of the input rows.
+    For four D7 points with multiplicities (1,1,1,2) the D7 columns become (-2,0,0,0), (1,-1,0,0), (0,1,-1,0), (0,0,1,-1).
+    **Arguments:**
+    - `q (ArrayLike)`: Integer matrix whose rows are a Z-basis of the D7 lattice, e.g. `Q[F.D7_indices()]`. The columns may be
+      all columns of the charge matrix or any subset containing the support of the rows.
+    - `d7_cols (Sequence[int], optional)`: The columns of the D7 points, e.g. `F.Qd7(D7_only=True).argmin(axis=1)`. If not
+      given, they are determined from the rows: the columns with a negative entry are tried first, then all choices among the
+      non-zero columns; the D7 columns are the ones for which steps 1-4 go through.
+    **Raises:**
+    - `ValueError`: Raised if the rows are not a single SO(8) chain: a canonical row has a negative entry outside the D7
+      columns, the canonical rows are not totally ordered, or their differences do not generate the lattice of the input rows.
+      With `d7_cols` given the message states which of these failed.
+    **Returns:**
+    - `np.ndarray`: The symmetric rows. If the rows of `q` already are the symmetric rows, in any order, a copy of `q`.
+    """
+    q=np.asarray(q,dtype=np.int64); r=len(q)
+    if d7_cols is not None:
+        S=_so8_chain(q,d7_cols)
+    else:
+        supp=np.flatnonzero(q.any(axis=0)); neg=np.flatnonzero((q<0).any(axis=0))
+        for T in ([tuple(neg)] if len(neg)==r else [])+list(combinations(supp,r)):
+            try: S=_so8_chain(q,T); break
+            except ValueError: continue
+        else:
+            raise ValueError("The rows are not an SO(8) chain for any choice of D7 columns; pass d7_cols to see the reason.")
+    return q.copy() if same_rows(S,q) else S
+
+def get_fiber_CY(F,set_glsm=False):
+    if F.is_nef_partition()==False or F.h_prime_is_lattice()==False:
+        raise ValueError("Fiber CY can only be determined for nef-partitions with h' Cartier")
+    pts=F.vectors_M_conv_toric_fan()
+    inds=pts@F.u==0
+    p5=project_points(pts[inds],F.u)
+    LB1=F.line_bundle_weierstrass_M(toric_fan_adapted=True)[inds]
+    LB2=F.line_bundle_base_M(toric_fan_adapted=True)[inds]
+    cy=cicy.CICY(p5,[LB1,LB2],keep_all=True)
+    if set_glsm:
+        cy.set_glsm(get_fiber_glsm(F,F.Qsat())[0])
+    return cy
+
+def orientifold_normal_form(p: Polytope,xi: ArrayLike,m0: ArrayLike|None=None,return_matrix: bool=False)->Polytope|tuple[Polytope,np.ndarray]:
+    """
+    **Description:**
+    Brings the double-cover polytope of a nef-partition orientifold into the normal form in which the movable O7 vertex is `v_star=(-1,0,...,0)` and `m0=(-1,0,...,0)`, so that the first coordinate of every lattice point is its layer `-<m0,v>` in `{-1,0,1}`. For trilayer orientifolds this is a trilayer normal form.
+    **Arguments:**
+    - `p (Polytope)`: The reflexive polytope whose points not interior to facets are the rays of the Calabi-Yau ambient fan.
+    - `xi (ArrayLike)`: The lattice vector defining the involution.
+    - `m0 (ArrayLike | None)`: The M-lattice point with `b_i c_i=<m0,v_i>+1`. If `None`, the first admissible point of the dual polytope is used. Defaults to `None`.
+    - `return_matrix (bool)`: Whether to also return the unimodular matrix `A` with new coordinates `v@A`. Defaults to `False`.
+    **Raises:**
+    - `ValueError`: Raised if there is no admissible `m0`, i.e. the orientifold does not give a nef partition.
+    **Returns:**
+    - `Polytope | tuple[Polytope,np.ndarray]`: The polytope in normal form, and `A` if `return_matrix=True`.
+    """
+    P=p.points_not_interior_to_facets()[1:]
+    if m0 is None:
+        M=p.dual().points()
+        M=M[((M@xi)%2==1)&np.all(M@P.T<=np.all((P+xi)%2==0,axis=1),axis=1)]
+        if len(M)==0:
+            raise ValueError("No admissible m0: the orientifold does not give a nef partition.")
+        m0=M[0]
+    A=np.rint(np.linalg.inv(np.vstack([-P[np.argmax(P@m0)],integral_nullspace(np.atleast_2d(m0)).T]))).astype(int)
+    q=Polytope(p.vertices()@A)
+    return (q,A) if return_matrix else q
