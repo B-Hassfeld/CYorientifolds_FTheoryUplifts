@@ -170,6 +170,7 @@ class CICY:
         self.__hodge_numbers_nonstringy = None
         self.__hodge_numbers_stringy = None
         self.__mirror = None
+        self.__mori_cone_cap=None
 
     def __repr__(self) -> str:
         return (f"A Calabi-Yau complete intersection of codimension {self.__r} and dimension {self.dim()} in a "
@@ -631,6 +632,7 @@ class CICY:
         self.__intnums_sparse = None
         self.__chern_in_glsm = {}
         self.__mori_cone = None
+        self.__mori_cone_cap = None
 
     # intersection theory
     # -------------------
@@ -1109,6 +1111,24 @@ class CICY:
         if self.__Cayley_Polytope is None:
             self.__Cayley_Polytope = UF.cayley_polytope([P.vertices() for P in self.newton_polytopes()])
         return self.__Cayley_Polytope
+
+    def mori_cone_cap(self, in_basis: bool = True) -> Cone:
+        if self.__mori_cone_cap is None:
+            fan, Q, N, d = self.fan(), self.glsm(), self.__N, self.dim()
+            # a generic CI meets O(σ) only if dim σ <= dim Y
+            cand = [c for k in range(1, d + 1) for c in fan.cones(dim=k)]
+            meet = {frozenset(c) for c in UF.intersecting_cones(
+                        fan, cones=cand, divisors=list(self.__divisors), closure=False)}
+            S = [s for s in meet if not any(s < t for t in meet)]
+            gens = []
+            for s in S:
+                off = np.setdiff1d(np.arange(N), np.fromiter(s, dtype=int) - 1)
+                gens.append(Cone(hyperplanes=Q[:, off].T).rays())  # (xQ)_v >= 0, v not in s
+            self.__mori_cone_cap = Cone(rays=np.unique(np.vstack(gens), axis=0))
+        if in_basis:
+            return self.__mori_cone_cap
+        return Cone(rays=self.__mori_cone_cap.rays() @ self.glsm())
+
 
 def _partition_representatives(V: np.ndarray, divisors: np.ndarray, lattice_basis: np.ndarray) -> np.ndarray | None:
     """
