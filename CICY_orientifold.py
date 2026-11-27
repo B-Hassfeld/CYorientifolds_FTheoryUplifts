@@ -823,7 +823,8 @@ class CICY_F_Theory_Uplift():
         self.__Qd7=None
         self.__Qsat=None
         self.__block_sizes=None
-        self.__MC_face=None
+        # the D7 faces of the Mori cone, keyed by `mori_cone_cap` (see `mori_cone_face_d7`)
+        self.__MC_face={}
         self.__intersection_numbers_surfaces_sat=None
         self.__vertical_intersection_form = None
 
@@ -2197,7 +2198,7 @@ class CICY_F_Theory_Uplift():
         self.__dual_cicy_has_glsm = False
         self.__basis_homology_M = None
         self.__intersection_numbers_M = None
-        self.__MC_face = None
+        self.__MC_face = {}
         self.__intersection_numbers_surfaces_sat = None
         self.__vertical_intersection_form = None
 
@@ -2378,7 +2379,7 @@ class CICY_F_Theory_Uplift():
         self.__Qsat=Qsat_new
         self.__dual_cicy_has_glsm=False
         self.__intersection_numbers_surfaces_sat=None
-        self.__MC_face=None
+        self.__MC_face={}
         self.__vertical_intersection_form=None
 
     def intersection_numbers_Qsat(self) -> dict[tuple[int, ...], int | float]:
@@ -2450,47 +2451,54 @@ class CICY_F_Theory_Uplift():
         """
         return self.__mirror_cicy(with_glsm=True).toric_chern_class(3,in_glsm_basis=True)
 
-    def mori_cone_face_d7(self, check_face: bool = False):
+    def mori_cone_face_d7(self, check_face: bool | str = False, mori_cone_cap: bool = True):
         """
         **Description:**
-    
-        Computes and caches the face of the Mori cone of `M_conv_toric_fan()` spanned by the curve classes in the row span of the D7 rows of `Qsat()`, in the basis of all rows of `Qsat()` (`UF.mori_cone_in_glsm_basis`).
-    
-        **Arguments:**
-    
-        - `check_face (bool)`: Whether to verify that the generators span a face of the Mori cone, only used on the first call. Defaults to `False`.
-    
-        **Returns:**
-    
-        - `Cone`: The D7 face of the Mori cone.
-    
-        """
-        if self.__MC_face is None:
-            self.__MC_face=UF.mori_cone_in_glsm_basis(self.Qsat(),self.M_conv_toric_fan(),sub_rows=self.D7_indices(),as_face_in_higher_dim_ambient=True,check_face=check_face)
-        return self.__MC_face
 
-    def compute_d7_gv(self,hilbert_basis: bool = False,min_points: int = 600,max_deg: int = 2,target_points: ArrayLike | None = None) -> list:
+        Computes and caches the face of the Mori cone cut out by the curve classes in the row span of the D7 rows of `Qsat()`, in the basis of all rows of `Qsat()`. With `mori_cone_cap` it is the face of the Mori cone cap of `dual_cicy()` (`CICY.mori_cone_face` with the fan `M_conv_toric_fan()` and the charge matrix `Qsat()`), which contains the curves of the dual complete intersection and is in general smaller than the toric Mori cone, and only depends on the cones of the fan meeting the complete intersection; the classes of degree 0 on the prime toric divisors missing it are kept (`restrict_to_Y`). Otherwise it is the face of the toric Mori cone of `M_conv_toric_fan()` (`UF.mori_cone_in_glsm_basis`). The faces of both cones are cached separately.
+
+        **Arguments:**
+
+        - `check_face (bool | str)`: The face check of `UF.mori_cone_in_glsm_basis`: `True` (strict: the intersection of the cone with the row span of the D7 rows is a face), `"face"` (the generators in the row span span a face) or `False`. Only used on the first call. Defaults to `False`.
+        - `mori_cone_cap (bool)`: Whether to take the face of the Mori cone cap instead of the toric Mori cone. Defaults to `True`.
+
+        **Returns:**
+
+        - `Cone`: The D7 face of the Mori cone cap or of the toric Mori cone.
+
+        """
+        key=bool(mori_cone_cap)
+        if key not in self.__MC_face:
+            if key:
+                self.__MC_face[key]=self.dual_cicy(with_fan=True,with_glsm=True).mori_cone_face(self.D7_indices(),mori_cone_cap=True,as_face_in_higher_dim_ambient=True,check_face=check_face)
+            else:
+                self.__MC_face[key]=UF.mori_cone_in_glsm_basis(self.Qsat(),self.M_conv_toric_fan(),sub_rows=self.D7_indices(),as_face_in_higher_dim_ambient=True,check_face=check_face)
+        return self.__MC_face[key]
+
+    def compute_d7_gv(self,hilbert_basis: bool = False,min_points: int = 600,max_deg: int = 2,target_points: ArrayLike | None = None,mori_cone_cap: bool = True) -> list:
         """
         **Description:**
-    
+
         Computes the genus-zero Gopakumar-Vafa invariants of the dual complete intersection for the curve classes on the D7 face of the Mori cone (`mori_cone_face_d7`), with `cygv.compute_gv`, the charge matrix `Qsat()`, the surface intersection numbers `intersection_numbers_surfaces_sat()` and the dual nef partition with its r + 1 parts.
-    
+
         **Arguments:**
-    
+
         - `hilbert_basis (bool)`: Whether to use the Hilbert basis of the face instead of its rays as generators. Defaults to `False`.
         - `min_points (int)`: Minimal number of curve classes to compute. Defaults to `600`.
         - `max_deg (int)`: Maximal degree with respect to the grading vector. Defaults to `2`.
         - `target_points (ArrayLike | None)`: Curve classes to compute the invariants for. Defaults to `None`.
-    
+        - `mori_cone_cap (bool)`: Whether to use the D7 face of the Mori cone cap instead of that of the toric Mori cone (`mori_cone_face_d7`). Defaults to `True`.
+
         **Returns:**
-    
+
         - `list`: The output of `cygv.compute_gv`, pairs `((curve class, surface index), invariant)`.
-    
+
         """
+        face=self.mori_cone_face_d7(mori_cone_cap=mori_cone_cap)
         if hilbert_basis:
-            gens=self.mori_cone_face_d7().hilbert_basis()
+            gens=face.hilbert_basis()
         else:
-            gens=self.mori_cone_face_d7().rays()
-        gv=compute_gv(generators=gens,min_points=min_points,grading_vector=self.mori_cone_face_d7().find_grading_vector(),q=self.Qsat(),intnums=self.intersection_numbers_surfaces_sat()[0],max_deg=max_deg,nefpart=self.nef_partition_M(zero_based=True),target_points=target_points)
+            gens=face.rays()
+        gv=compute_gv(generators=gens,min_points=min_points,grading_vector=face.find_grading_vector(),q=self.Qsat(),intnums=self.intersection_numbers_surfaces_sat()[0],max_deg=max_deg,nefpart=self.nef_partition_M(zero_based=True),target_points=target_points)
         return gv
 

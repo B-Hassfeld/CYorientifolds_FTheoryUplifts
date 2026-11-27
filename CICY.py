@@ -33,6 +33,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from functools import reduce
 from itertools import combinations, permutations, product
+from typing import Literal
 import warnings
 
 import numpy as np
@@ -42,6 +43,7 @@ from flint import fmpz_mat
 
 import cygv
 from cytools import Polytope, h_polytope, Cone
+from cytools.cone import dualize
 from cytools.vector_config import VectorConfiguration
 from cytools.vector_config.fan import Fan
 
@@ -170,7 +172,9 @@ class CICY:
         self.__hodge_numbers_nonstringy = None
         self.__hodge_numbers_stringy = None
         self.__mirror = None
-        self.__mori_cone_cap=None
+        # the maximal cones meeting Y and the rays missing Y (depend on the fan only), and the caps keyed by `restrict_to_Y`
+        self.__cap_data = None
+        self.__mori_cone_cap = {}
 
     def __repr__(self) -> str:
         return (f"A Calabi-Yau complete intersection of codimension {self.__r} and dimension {self.dim()} in a "
@@ -324,6 +328,8 @@ class CICY:
         self.__chern_in_glsm = {}
         self.__mori_cone = None
         self.__mori_cone_not_in_basis = None
+        self.__cap_data = None
+        self.__mori_cone_cap = {}
         self.__e_polynomial = None
         self.__hodge_numbers_nonstringy = None
 
@@ -580,6 +586,7 @@ class CICY:
         self.__intnums_sparse = None
         self.__chern_in_glsm = {}
         self.__mori_cone = None
+        self.__mori_cone_cap = {}
 
     def glsm(self) -> np.ndarray:
         """
@@ -632,7 +639,7 @@ class CICY:
         self.__intnums_sparse = None
         self.__chern_in_glsm = {}
         self.__mori_cone = None
-        self.__mori_cone_cap = None
+        self.__mori_cone_cap = {}
 
     # intersection theory
     # -------------------
@@ -724,6 +731,176 @@ class CICY:
         if self.__mori_cone is None:
             self.__mori_cone = UF.mori_cone_in_glsm_basis(self.glsm(), self.fan())
         return self.__mori_cone
+
+    def _cap_data(self) -> tuple[list[np.ndarray], np.ndarray]:
+        """
+        **Description:**
+        The toric data of the Mori cone cap (`mori_cone_cap`), cached and reset by `set_fan`: the maximal cones s among the
+        cones of the fan `fan` whose torus orbits O(s) meet Y, and the rays whose prime toric divisors miss Y. On O(s) the
+        defining sections reduce to the monomials on faces of their Newton polytopes, and O(s) meets the generic Y iff these
+        faces satisfy Bernstein's criterion (`UF.intersecting_cones` with `closure=False`). Only cones of dimension <= dim Y
+        can meet Y, since Y ∩ O(s) has dimension dim Y - dim s. Every orbit meeting Y is the orbit of a face of some s, so Y
+        lies in the union U of the affine charts U_s. A ray meets Y iff it lies in one of the cones s, since D_v is the union
+        of the orbits of the cones containing v.
+        **Raises:**
+        - `ValueError`: Raised if no cone of the fan meets Y.
+        **Returns:**
+        - `tuple[list[np.ndarray], np.ndarray]`: The zero-based ray indices of the maximal cones s, and the sorted zero-based
+          indices of the rays missing Y.
+        """
+        if self.__cap_data is None:
+            fan, d = self.fan(), self.dim()
+            candidates = [c for k in range(1, d + 1) for c in fan.cones(dim=k)]
+            meet = {frozenset(int(l) for l in c)
+                    for c in UF.intersecting_cones(fan, cones=candidates, divisors=list(self.__divisors), closure=False)}
+            if not meet:
+                raise ValueError("No cone of the fan meets Y.")
+            # a cone is maximal iff it is not a proper face of another cone meeting Y
+            proper_faces = {frozenset(f) for t in meet for k in range(1, len(t)) for f in combinations(t, k)}
+            cones = [np.array(s, dtype=int) - 1 for s in sorted(tuple(sorted(s)) for s in meet if s not in proper_faces)]
+            missing = np.setdiff1d(np.arange(self.__N), np.concatenate(cones))
+            self.__cap_data = (cones, missing)
+        cones, missing = self.__cap_data
+        return [s.copy() for s in cones], missing.copy()
+
+    def _cap_generators(self, rows: np.ndarray | None, restrict_to_Y: bool) -> np.ndarray:
+        """
+        **Description:**
+        Generators of the sum over the cones s of `_cap_data` of the cones C_s ∩ L, with
+            C_s = {x : (x Q)_v >= 0 for every ray v not in s}
+        in the GLSM coordinates x of the rows of Q = `glsm()`, intersected with (x Q)_v = 0 for the rays v missing Y if
+        `restrict_to_Y`, and L = {x : x_a = 0 for the rows a not in `rows`} (everything if `rows` is `None`). Each C_s ∩ L is
+        computed with ppl (`_cone_generators`) directly in the coordinates of the rows in L.
+        **Arguments:**
+        - `rows (np.ndarray | None)`: Zero-based rows of Q spanning L, or `None` for all rows.
+        - `restrict_to_Y (bool)`: Whether to impose (x Q)_v = 0 for the rays v missing Y.
+        **Raises:**
+        - `ValueError`: Raised if the GLSM charge matrix is not integral.
+        **Returns:**
+        - `np.ndarray`: The distinct nonzero primitive generators, one per row, in the coordinates of the rows in L.
+        """
+        Q = self.glsm()
+        Qi = np.rint(Q).astype(np.int64)
+        if not np.array_equal(Q, Qi):
+            raise ValueError("The Mori cone cap needs an integral GLSM charge matrix.")
+        A = Qi if rows is None else Qi[rows]
+        cones, missing = self._cap_data()
+        # the rays missing Y lie in no cone s, so (x Q)_v >= 0 is already imposed for them; adding <= 0 makes it an equality
+        equalities = -A[:, missing].T if restrict_to_Y else np.zeros((0, A.shape[0]), dtype=np.int64)
+        everything = np.arange(self.__N)
+        G = np.vstack([_cone_generators(np.vstack([A[:, np.setdiff1d(everything, s)].T, equalities]), A.shape[0])
+                       for s in cones])
+        return np.unique(G[G.any(axis=1)], axis=0)
+
+    def mori_cone_cap(self, in_basis: bool = True, restrict_to_Y: bool = True) -> Cone:
+        """
+        **Description:**
+        The Mori cone cap of Y: an outer approximation of the cone of curves of Y (pushed forward to X) computed from toric
+        data, generalizing `CalabiYau.mori_cone_cap` of CYTools from hypersurfaces to complete intersections. With the cones
+        s of `_cap_data` (the maximal cones of `fan` whose torus orbits meet Y) it is the sum
+            M_cap = sum_s C_s,   C_s = {x : (x Q)_v >= 0 for every ray v not in s},
+        in the GLSM coordinates x of the rows of Q = `glsm()`, so that x Q are the intersection numbers with the prime toric
+        divisors. It contains every curve C ⊂ Y: a divisor D = sum_v h_v D_v that is non-negative on M_cap is non-negative
+        on each C_s, so by Farkas there is a character m_s with <m_s, v> + h_v >= 0 for all rays v, with equality on s. The
+        section chi^(m_s) of O(D) then does not vanish on the affine chart U_s, so O(D) is globally generated on
+        U = ∪_s U_s ⊇ Y and D.C >= 0. Conversely M_cap lies in the toric Mori cone of every complete simplicial fan over the
+        rays containing the cones s (C_s lies in C_sigma for every maximal cone sigma containing s), in particular in
+        `mori_cone`, which is the same sum over all maximal cones of the fan. Y only depends on the fan through the cones s,
+        e.g. for a nef partition of a reflexive polytope on the triangulation of the faces of dimension <= dim Y - 1, and so
+        does M_cap. For a hypersurface in the toric variety of a fine regular star triangulation of a 4d reflexive polytope
+        it agrees with `CalabiYau.mori_cone_cap`, which uses a smaller but sufficient set of circuits.
+        With `restrict_to_Y` it is intersected with (x Q)_v = 0 for the rays v whose prime toric divisors miss Y
+        (`_cap_data`), since every curve in Y has degree 0 on them. These rays lie in no cone s, so (x Q)_v >= 0 on all of
+        M_cap and the intersection is a face of M_cap, the sum of the faces C_s ∩ {(x Q)_v = 0}. It only changes the cone if
+        Y misses some prime toric divisor, e.g. for rays kept with `keep_all`.
+        The generators are not reduced to the extremal rays (`Cone.extremal_rays`). Cached; reset by `set_fan`, `set_basis`
+        and `set_glsm`.
+        **Arguments:**
+        - `in_basis (bool)`: Whether to express the cone in the GLSM basis of `glsm` instead of all prime toric divisors
+          (the intersection numbers x Q). Defaults to `True`.
+        - `restrict_to_Y (bool)`: Whether to impose degree 0 on the prime toric divisors missing Y. Defaults to `True`.
+        **Raises:**
+        - `ValueError`: Raised if no cone of the fan meets Y or the GLSM charge matrix is not integral.
+        **Returns:**
+        - `Cone`: The Mori cone cap, in R^(N - dim X) in the GLSM basis, or in R^N if `in_basis` is `False`.
+        """
+        key = bool(restrict_to_Y)
+        if key not in self.__mori_cone_cap:
+            self.__mori_cone_cap[key] = Cone(rays=self._cap_generators(None, key))
+        cap = self.__mori_cone_cap[key]
+        if in_basis:
+            return cap
+        return Cone(rays=cap.rays() @ np.rint(self.glsm()).astype(np.int64))
+
+    def mori_cone_face(self, sub_rows: ArrayLike, mori_cone_cap: bool = True, as_face_in_higher_dim_ambient: bool = False,
+                       check_face: bool | Literal["face"] = True, restrict_to_Y: bool = True,
+                       method: Literal["auto", "local", "full"] = "auto") -> Cone:
+        """
+        **Description:**
+        The face of the Mori cone cap `mori_cone_cap` (or, with `mori_cone_cap=False`, of the toric Mori cone `mori_cone`)
+        cut out by the curve classes in the row span L of the rows `sub_rows` of `glsm`, i.e. by the classes x with x_a = 0
+        for all other rows a, as `UF.mori_cone_in_glsm_basis` with `sub_rows` (e.g. the D7 rows of `Qsat` in
+        `CICY_orientifold.mori_cone_face_d7`). The intersection M ∩ L of the cone M with L is only a face if `check_face`
+        certifies it (`UF.mori_cone_in_glsm_basis`, `UF.mori_face_certificate`). For the cap there are two methods:
+        - "full": the generators of the whole cap (`mori_cone_cap(in_basis=False)`) are passed to
+          `UF.mori_cone_in_glsm_basis`, which keeps those in L and runs the check `check_face` on them.
+        - "local": if M ∩ L is a face of M = sum_s C_s (see `mori_cone_cap`), exposed by a divisor h vanishing on L, then
+          h >= 0 on every C_s and C_s ∩ h^⊥ = C_s ∩ L, so M ∩ L = sum_s (C_s ∩ L). Each C_s ∩ L is computed in the
+          len(sub_rows) coordinates of L, without the full cap. The face property is certified on the toric Mori cone
+          (`UF.mori_face_certificate` with the strict LP on the wall curves of `fan`): the cap lies in the toric Mori cone,
+          so a divisor vanishing on L, non-negative on the toric Mori cone and positive on its generators outside L also
+          exposes M ∩ L in the cap (with or without `restrict_to_Y`). This certificate is sufficient, not necessary: it can
+          fail although M ∩ L is a face of the smaller cap. With `check_face`, a warning is issued if it fails, since the
+          result can then be strictly smaller than M ∩ L.
+        - "auto": "local" if the toric certificate exists, otherwise "full". The certificate is computed even if
+          `check_face` is `False`, to choose the method.
+        When M ∩ L is a face both methods give the same cone, but their generating sets can differ; neither is reduced to
+        the extremal rays.
+        **Arguments:**
+        - `sub_rows (ArrayLike)`: Zero-based indices of the rows of `glsm` spanning L.
+        - `mori_cone_cap (bool)`: Whether to take the face of `mori_cone_cap` instead of `mori_cone`. Defaults to `True`.
+        - `as_face_in_higher_dim_ambient (bool)`: Whether to return the face in the coordinates of all rows of `glsm`
+          instead of those of the rows `sub_rows`. Defaults to `False`.
+        - `check_face (bool | Literal["face"])`: The face check of `UF.mori_cone_in_glsm_basis`: `True` (strict: M ∩ L is
+          a face), `"face"` (the generators in L span a face) or `False`. Defaults to `True`.
+        - `restrict_to_Y (bool)`: See `mori_cone_cap`. Ignored for the toric Mori cone. Defaults to `True`.
+        - `method (Literal["auto", "local", "full"])`: See above. Ignored for the toric Mori cone. Defaults to `"auto"`.
+        **Raises:**
+        - `ValueError`: Raised if `sub_rows` are not distinct rows of `glsm`, `method` or `check_face` is invalid, or no
+          nonzero curve class of the cone lies in L.
+        **Returns:**
+        - `Cone`: The face, in the coordinates of the rows `sub_rows` of `glsm` (or of all rows).
+        """
+        Q = self.glsm()
+        sub = np.asarray(sub_rows, dtype=int).ravel()
+        if len(set(sub.tolist())) != len(sub) or (sub < 0).any() or (sub >= Q.shape[0]).any():
+            raise ValueError(f"`sub_rows` must be distinct row indices of the GLSM charge matrix (0, ..., {Q.shape[0] - 1}).")
+        if method not in ("auto", "local", "full"):
+            raise ValueError(f'`method` must be "auto", "local" or "full", got {method!r}.')
+        if not (isinstance(check_face, (bool, np.bool_)) or check_face == "face"):
+            raise ValueError(f'`check_face` must be True, False or "face", got {check_face!r}.')
+        if not mori_cone_cap:
+            return UF.mori_cone_in_glsm_basis(Q, self.fan(), sub_rows=sub, check_face=check_face,
+                                              as_face_in_higher_dim_ambient=as_face_in_higher_dim_ambient)
+        certified = None
+        if method == "auto" or (method == "local" and check_face):
+            certified = UF.mori_face_certificate(Q, self.mori_cone(in_basis=False).rays(), sub, strict=True) is not None
+        if method == "full" or (method == "auto" and not certified):
+            return UF.mori_cone_in_glsm_basis(Q, H=self.mori_cone_cap(in_basis=False, restrict_to_Y=restrict_to_Y).rays(),
+                                              sub_rows=sub, check_face=check_face,
+                                              as_face_in_higher_dim_ambient=as_face_in_higher_dim_ambient)
+        if certified is False:
+            warnings.warn("No face certificate on the toric Mori cone: the local face of the Mori cone cap may be strictly "
+                          "smaller than the intersection of the cap with the row span of the rows `sub_rows`, and need not be "
+                          "a face. Use method='full' to check it on the cap itself.")
+        G = self._cap_generators(sub, restrict_to_Y)
+        if len(G) == 0:
+            raise ValueError("No nonzero curve class of the Mori cone cap lies in the row span of the rows `sub_rows`.")
+        if as_face_in_higher_dim_ambient:
+            G_full = np.zeros((len(G), Q.shape[0]), dtype=np.int64)
+            G_full[:, sub] = G
+            G = G_full
+        return Cone(rays=G)
 
     def compute_gv(self, hilbert_basis: bool = False, min_points: int = 600, max_deg: int = 2, target_points: ArrayLike | None = None,grading_vector=None) -> list:
         """
@@ -1112,22 +1289,21 @@ class CICY:
             self.__Cayley_Polytope = UF.cayley_polytope([P.vertices() for P in self.newton_polytopes()])
         return self.__Cayley_Polytope
 
-    def mori_cone_cap(self, in_basis: bool = True) -> Cone:
-        if self.__mori_cone_cap is None:
-            fan, Q, N, d = self.fan(), self.glsm(), self.__N, self.dim()
-            # a generic CI meets O(σ) only if dim σ <= dim Y
-            cand = [c for k in range(1, d + 1) for c in fan.cones(dim=k)]
-            meet = {frozenset(c) for c in UF.intersecting_cones(
-                        fan, cones=cand, divisors=list(self.__divisors), closure=False)}
-            S = [s for s in meet if not any(s < t for t in meet)]
-            gens = []
-            for s in S:
-                off = np.setdiff1d(np.arange(N), np.fromiter(s, dtype=int) - 1)
-                gens.append(Cone(hyperplanes=Q[:, off].T).rays())  # (xQ)_v >= 0, v not in s
-            self.__mori_cone_cap = Cone(rays=np.unique(np.vstack(gens), axis=0))
-        if in_basis:
-            return self.__mori_cone_cap
-        return Cone(rays=self.__mori_cone_cap.rays() @ self.glsm())
+
+def _cone_generators(hyperplanes: np.ndarray, dim: int) -> np.ndarray:
+    """
+    **Description:**
+    Generators of the cone {x in R^dim : hyperplanes @ x >= 0} with ppl (`cytools.cone.dualize`): its extremal rays and
+    both signs of a basis of its lineality space. Unlike `Cone(hyperplanes=...).rays()` it accepts (and drops) zero rows
+    without warnings and returns a (0, dim) array for the zero cone.
+    **Arguments:**
+    - `hyperplanes (np.ndarray)`: Integer inward normals, one per row.
+    - `dim (int)`: The ambient dimension.
+    **Returns:**
+    - `np.ndarray`: The generators, one per row, as an integer array of shape (k, dim).
+    """
+    M = np.asarray(hyperplanes, dtype=np.int64).reshape(-1, dim)
+    return np.asarray(dualize(M[M.any(axis=1)]), dtype=np.int64).reshape(-1, dim)
 
 
 def _partition_representatives(V: np.ndarray, divisors: np.ndarray, lattice_basis: np.ndarray) -> np.ndarray | None:
