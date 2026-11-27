@@ -301,6 +301,8 @@ def array_to_latex(arr: np.ndarray,as_fractions: bool=False,max_denominator: int
     """
     if len(arr.shape)>2:
         raise ValueError("Only 2D matrices are supported.")
+    if len(arr.shape)==1:
+        arr=arr.reshape(1,arr.shape[0])
 
     def to_frac(x):
         f=Fraction(x) if isinstance(x,(int,np.integer,Fraction)) else Fraction(float(x)).limit_denominator(max_denominator)
@@ -309,7 +311,8 @@ def array_to_latex(arr: np.ndarray,as_fractions: bool=False,max_denominator: int
         return ("-" if f<0 else "")+rf"\frac{{{abs(f.numerator)}}}{{{f.denominator}}}"
     fmt=to_frac if as_fractions else str
     lines=["            "+" & ".join(map(fmt,row))+r" \\" for row in arr]
-    return "\\begin{pmatrix}\n"+"\n".join(lines)+"\n        \\end{pmatrix}"
+    print("\\begin{pmatrix}\n"+"\n".join(lines)+"\n        \\end{pmatrix}")
+    return None
 
 def integral_gale_transform(points: ArrayLike)->np.ndarray:
     """
